@@ -1837,6 +1837,51 @@ fxDDTestProxyTexImage (GLcontext *ctx, GLenum target,
                                   depth, border);
 }
 
+/* Nejc Free texture image data for textures allocated by this driver.
+ *
+ * We allocate texImage->Data with _mesa_malloc, so we must free it
+ * with _mesa_free (not _mesa_free_texmemory), and we must use the
+ * correct (GLcontext *, struct gl_texture_image *) signature expected
+ * by dd_function_table::FreeTexImageData.  The core helper
+ * _mesa_free_texture_image_data() assumes allocations were done via
+ * _mesa_alloc_texmemory/_mesa_free_texmemory, which is not the case
+ * here.
+ */
+static void
+fxFreeTexImageData(GLcontext *ctx, struct gl_texture_image *texImage)
+{
+   (void) ctx;
+
+   if (texImage->Data && !texImage->IsClientData) {
+      _mesa_free(texImage->Data);
+   }
+
+   texImage->Data = NULL;
+}
+
+/* INIT Texture functions*/
+void fxInitTextureFuncs(struct dd_function_table *functions)
+{
+   functions->BindTexture = fxDDTexBind;
+   functions->NewTextureObject = fxDDNewTextureObject;
+   functions->DeleteTexture = fxDDTexDel;
+   functions->TexEnv = fxDDTexEnv;
+   functions->TexParameter = fxDDTexParam;
+   functions->ChooseTextureFormat = fxDDChooseTextureFormat;
+   functions->TexImage1D = fxDDTexImage1D;
+   functions->TexSubImage1D = fxDDTexSubImage1D;
+   functions->TexImage2D = fxDDTexImage2D;
+   functions->TexSubImage2D = fxDDTexSubImage2D;
+   functions->IsTextureResident = fxDDIsTextureResident;
+   functions->CompressedTexImage2D = fxDDCompressedTexImage2D;
+   functions->CompressedTexSubImage2D = fxDDCompressedTexSubImage2D;
+   functions->UpdateTexturePalette = fxDDTexPalette;
+
+   /* Use a custom FreeTexImageData that matches this driver's
+    * allocation strategy and the expected function signature.
+    */
+   functions->FreeTexImageData = fxFreeTexImageData;
+}
 
 #else /* FX */
 

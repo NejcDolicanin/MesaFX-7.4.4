@@ -50,9 +50,9 @@ extern "C" {
 }
 #endif
 
-#include "glide/fxmesa.h"
+#include "../../glide/fxmesa.h"
 #include "glheader.h"
-#include "glapi.h"
+#include "glapi/glapi.h"
 #include "imports.h"
 #include "../../glide/fxdrv.h"
 

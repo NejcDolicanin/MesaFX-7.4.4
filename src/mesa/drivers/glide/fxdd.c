@@ -417,9 +417,6 @@ fxDDSetDrawBuffer(GLcontext * ctx, GLenum mode)
       /* we'll need a software fallback */
       /* XXX not implemented */
    }
-
-   /* update s/w fallback state */
-   _swrast_DrawBuffer(ctx, mode);
 }
 
 
@@ -2107,8 +2104,30 @@ fxDDUpdateDDPointers(GLcontext * ctx, GLuint new_state)
    fxMesa->new_gl_state |= new_state;
 }
 
+/**
+ * Set up essential driver functions BEFORE context creation
+ * This is called from fxapi.c before _mesa_create_context()
+ */
+void fxSetupDDPointers_PreContext(struct dd_function_table *functions, fxMesaContext fxMesa)
+{
+   if (TDFX_DEBUG & VERBOSE_DRIVER)
+   {
+      fprintf(stderr, "fxSetupDDPointers_PreContext()\n");
+   }
 
+   /* Set up essential framebuffer/renderbuffer functions that Mesa needs during context creation */
+   fxInitFramebufferFuncs(functions);
 
+   /* Set up other essential functions that might be needed during context creation */
+   functions->GetString = fxDDGetString;
+   functions->UpdateState = fxDDUpdateDDPointers;
+
+   /* Set up essential span functions that Mesa 6.3+ needs during context creation */
+   /* Note: We can't call fxSetupDDSpanPointers() here because it needs a GLcontext,
+    * but we can set up the basic span infrastructure that Mesa needs */
+   functions->GetBufferSize = fxDDGetBufferSize;
+   functions->Viewport = fxDDViewport;
+}
 
 void
 fxSetupDDPointers(GLcontext * ctx)
@@ -2179,8 +2198,20 @@ fxSetupDDPointers(GLcontext * ctx)
       ctx->Driver.StencilOpSeparate	= fxDDStencilOpSeparate;
    }
 
-   fxSetupDDSpanPointers(ctx);
-   fxDDUpdateDDPointers(ctx, ~0);
+   /*
+    * Swrast hooks for imaging extensions:
+    */
+   ctx->Driver.CopyColorTable = _swrast_CopyColorTable;
+   ctx->Driver.CopyColorSubTable = _swrast_CopyColorSubTable;
+   ctx->Driver.CopyConvolutionFilter1D = _swrast_CopyConvolutionFilter1D;
+   ctx->Driver.CopyConvolutionFilter2D = _swrast_CopyConvolutionFilter2D;
+
+   // fxSetupDDSpanPointers(ctx);
+   // fxDDUpdateDDPointers(ctx, ~0);
+
+   /* Nejc: Initialize framebuffer functions for Mesa 6.3+ */
+   fxInitFramebufferFuncs(&ctx->Driver);
+   fxDDUpdateDDPointers(ctx, _NEW_ALL);
 }
 
 

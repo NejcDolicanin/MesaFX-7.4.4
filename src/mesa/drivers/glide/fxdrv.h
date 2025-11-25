@@ -551,6 +551,8 @@ struct tfxMesaContext
 
 extern void fxSetupFXUnits(GLcontext *);
 extern void fxSetupDDPointers(GLcontext *);
+extern void fxSetupDDPointers_PreContext(struct dd_function_table *functions, fxMesaContext fxMesa);
+extern void fxInitTextureFuncs(struct dd_function_table *functions);
 
 /* fxvb.c:
  */

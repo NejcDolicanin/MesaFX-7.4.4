@@ -5,7 +5,7 @@
 #define HWSTR                   "3dfx Voodoo Graphics, Voodoo Rush, Voodoo^2, Voodoo Banshee, Velocity 100/200, Voodoo3, Voodoo4, Voodoo5"
 #define COPYRIGHTSTR            "Copyright \251 Brian E. Paul"
 
-#define VERSIONSTR              7.4.0.4"
+#define VERSIONSTR              "7.4.0.4"
 #define MANVERSION              7
 #define MANREVISION             4
 #define BUILD_NUMBER            4
