@@ -51,17 +51,6 @@
 #	realclean:	remove all generated files
 #
 
-# MinGW core makefile updated for Mesa 7.0
-#
-#  Updated : by Heromyth, on 2007-7-21
-#  Email   : zxpmyth@yahoo.com.cn
-#  Bugs    : 1) All the default settings work fine. But the setting X86=1 can't work. 
-#            The others havn't been tested yet.
-#            2) The generated DLLs are *not* compatible with the ones built
-#            with the other compilers like VC8, especially for GLUT. 
-#            3) MAlthough more tests are needed, it can be used individually!
-
-
 .PHONY : all libgl clean realclean
 
 ifeq ($(ICD),1)
@@ -71,39 +60,55 @@ else
   # I love c89
   CFLAGS = -Wall -pedantic
 endif
-CFLAGS += -O2 -ffast-math
+
+#CFLAGS += -O2 -ffast-math
+# Nejc Safe optimization for Win98/XP, so mesa uses it
+CFLAGS += -O2 \
+          -ffast-math \
+          -m32 -march=i586 -mtune=i686 \
+          -mno-ms-bitfields \
+          -mstackrealign \
+          -fomit-frame-pointer \
+          -fno-asynchronous-unwind-tables \
+          -D_WIN32_WINNT=0x0400 -DWINVER=0x0400 \
+          -static-libgcc
+
+#Explanation
+#          -mno-ms-bitfields \
+#          -mstackrealign \
+#          -fno-omit-frame-pointer \
+#          -fno-strict-aliasing \
+#          -fno-tree-vectorize -fno-tree-slp-vectorize \
+#          -fno-asynchronous-unwind-tables \
+#          -D_WIN32_WINNT=0x0400 -DWINVER=0x0400 \
+#          -static-libgcc
+#-mno-ms-bitfields -> Ensures structure packing matches MSVC (important for Glide).
+#-fno-tree-vectorize and -fno-tree-slp-vectorize ->Disables automatic vectorization optimizations that could break on older CPUs or introduce crashes.
+#-mstackrealign -> Forces stack alignment for old OSes, adds minor overhead.
+#-fno-omit-frame-pointer -> Keeps frame pointers for debugging and stability, but adds overhead.
+#-fno-strict-aliasing -> Prevents aggressive alias optimizations, safer but slower.
+#-fno-tree-vectorize -> Prevents auto-vectorization that might emit SSE2 instructions (Win98 may not handle).
+#-fno-asynchronous-unwind-tables -> Avoids DWARF unwinding tables (saves size and avoids some incompatibility).
+#-static-libgcc -> so it doesn’t depend on a newer libgcc DLL.
 
 export CFLAGS
 
+# Nejc Define MAKE explicitly to avoid path issues
+MAKE = make
 
-ifeq ($(wildcard $(addsuffix /rm.exe,$(subst ;, ,$(PATH)))),)
-UNLINK = del $(subst /,\,$(1))
-else
-UNLINK = $(RM) $(1)
-endif
+#Nejc added rm, instead del
+UNLINK = rm -f $(1)
 
-all: libgl libglu libglut example
+all: libgl
 
 libgl: lib
 	$(MAKE) -f Makefile.mgw -C src/mesa
-
-libglu: libgl
-	$(MAKE) -f Makefile.mgw -C src/glu/sgi
-
-libglut: libglu 
-	$(MAKE) -f Makefile.mgw -C src/glut/glx
-
-example: libglut 
-	$(MAKE) -f Makefile.mgw star -C progs/samples
-	copy progs\samples\star.exe lib
 
 lib:
 	mkdir lib
 
 clean:
 	$(MAKE) -f Makefile.mgw clean -C src/mesa
-	$(MAKE) -f Makefile.mgw clean -C src/glu/sgi
-	$(MAKE) -f Makefile.mgw clean -C src/glut/glx
 
 realclean: clean
 	-$(call UNLINK,lib/*.a)

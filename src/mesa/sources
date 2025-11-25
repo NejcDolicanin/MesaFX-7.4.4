@@ -79,7 +79,8 @@ GLAPI_SOURCES = \
 	main/dispatch.c \
 	glapi/glapi.c \
 	glapi/glapi_getproc.c \
-	glapi/glthread.c
+	glapi/glthread.c \
+	glapi/glapi_alias_stubs.c
 
 MATH_SOURCES = \
 	math/m_debug_clip.c \
@@ -255,6 +256,21 @@ SPARC_API =			\
 COMMON_DRIVER_SOURCES =			\
 	drivers/common/driverfuncs.c
 
+#Nejc - Glide
+GLIDE_DRIVER_SOURCES =			\
+	drivers/glide/fxapi.c		\
+	drivers/glide/fxdd.c		\
+	drivers/glide/fxddspan.c	\
+	drivers/glide/fxddtex.c		\
+	drivers/glide/fxframebuffer.c	\
+	drivers/glide/fxrenderbuffer.c	\
+	drivers/glide/fxsetup.c		\
+	drivers/glide/fxtexman.c	\
+	drivers/glide/fxtris.c		\
+	drivers/glide/fxvb.c		\
+	drivers/glide/fxglidew.c	\
+	drivers/glide/fxg.c			\
+	drivers/glide/fxutil.c
 
 
 ### All the core C sources
