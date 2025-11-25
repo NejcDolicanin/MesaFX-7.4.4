@@ -149,8 +149,8 @@
 	rgba[3] = (p & 0x8000) ? 255 : 0;				\
     } while (0)
 
-#define TAG(x) tdfx##x##_ARGB1555
-#include "../dri/common/spantmp.h"
+// #define TAG(x) tdfx##x##_ARGB1555
+// #include "../dri/common/spantmp.h"
 
 
 /* 16 bit, RGB565 color spanline and pixel functions */
@@ -188,8 +188,8 @@
 	rgba[3] = 0xff;							\
     } while (0)
 
-#define TAG(x) tdfx##x##_RGB565
-#include "../dri/common/spantmp.h"
+// #define TAG(x) tdfx##x##_RGB565
+// #include "../dri/common/spantmp.h"
 
 
 /* 32 bit, ARGB8888 color spanline and pixel functions */
@@ -220,8 +220,8 @@
         rgba[3] = (p >> 24) & 0xff;					\
     } while (0)
 
-#define TAG(x) tdfx##x##_ARGB8888
-#include "../dri/common/spantmp.h"
+// #define TAG(x) tdfx##x##_ARGB8888
+// #include "../dri/common/spantmp.h"
 
 
 /************************************************************************/
@@ -283,8 +283,8 @@
 #define READ_DEPTH( d, _x, _y )						\
     d = *(GLushort *)(buf + _x*BYTESPERPIXEL + _y*pitch)
 
-#define TAG(x) tdfx##x##_Z16
-#include "../dri/common/depthtmp.h"
+// #define TAG(x) tdfx##x##_Z16
+// #include "../dri/common/depthtmp.h"
 
 
 /* 24 bit, depth spanline and pixel functions (for use w/ stencil) */
@@ -312,9 +312,64 @@
 #define READ_DEPTH( d, _x, _y )						\
     d = (*(GLuint *)(buf + _x*BYTESPERPIXEL + _y*pitch)) & 0xffffff
 
-#define TAG(x) tdfx##x##_Z24
-#include "../dri/common/depthtmp.h"
+// #define TAG(x) tdfx##x##_Z24
+// #include "../dri/common/depthtmp.h"
 
+/* Nejc - New renderbuffer stuff */
+#define FLUSH_BATCH(fxMesa)
+#define LOCK_HARDWARE(fxMesa)
+#define UNLOCK_HARDWARE(fxMesa)
+
+/**********************************************************************/
+/*                    Locking for swrast                              */
+/**********************************************************************/
+void fxSpanRenderStart(GLcontext *ctx)
+{
+	fxMesaContext fxMesa = FX_CONTEXT(ctx);
+	LOCK_HARDWARE(fxMesa);
+}
+
+void fxSpanRenderFinish(GLcontext *ctx)
+{
+	fxMesaContext fxMesa = FX_CONTEXT(ctx);
+	_swrast_flush(ctx);
+	UNLOCK_HARDWARE(fxMesa);
+}
+
+/* Set the buffer used for reading */
+// Nejc - ToDo not used anymore CAN SAFELY REMOVE
+// static void fxDDSetBuffer(GLcontext *ctx, GLframebuffer *buffer, GLuint bufferBit)
+// {
+// 	fxMesaContext fxMesa = FX_CONTEXT(ctx);
+// 	(void)buffer;
+
+// 	switch (bufferBit)
+// 	{
+// 	case BUFFER_BIT_FRONT_LEFT:
+// 		fxMesa->currentFB = GR_BUFFER_FRONTBUFFER;
+// 		break;
+// 	case BUFFER_BIT_BACK_LEFT:
+// 		fxMesa->currentFB = GR_BUFFER_BACKBUFFER;
+// 		break;
+// 	default:
+// 		break;
+// 	}
+// }
+
+/**********************************************************************/
+/*                    Initialize swrast device driver                 */
+/**********************************************************************/
+void fxDDInitSpanFuncs(GLcontext *ctx)
+{
+	/* Mesa 6.3+ uses renderbuffer GetRow/PutRow functions instead of span functions */
+	/* Span functions are now set up in fxSetSpanFunctions() in fxrenderbuffer.c */
+
+	/* Keep the render start/finish functions for hardware locking */
+	struct swrast_device_driver *swdd = _swrast_GetDeviceDriverReference(ctx);
+	// swdd->SetBuffer = fxDDSetBuffer;			 /* Use the proper SetBuffer function */
+	swdd->SpanRenderStart = fxSpanRenderStart;	 /* BEGIN_BOARD_LOCK */
+	swdd->SpanRenderFinish = fxSpanRenderFinish; /* END_BOARD_LOCK */
+}
 
 /* 32 bit, depth spanline and pixel functions (for use w/o stencil) */
 /* [dBorca] Hack alert:
@@ -335,290 +390,290 @@
  * Read a span of 15-bit RGB pixels.  Note, we don't worry about cliprects
  * since OpenGL says obscured pixels have undefined values.
  */
-static void fxReadRGBASpan_ARGB1555 (const GLcontext * ctx,
-                                     struct gl_renderbuffer *rb,
-                                     GLuint n,
-                                     GLint x, GLint y,
-                                     GLubyte rgba[][4])
-{
- fxMesaContext fxMesa = FX_CONTEXT(ctx);
- GrBuffer_t currentFB = GR_BUFFER_BACKBUFFER;
- GrLfbInfo_t info;
- info.size = sizeof(GrLfbInfo_t);
- if (grLfbLock(GR_LFB_READ_ONLY, currentFB,
-               GR_LFBWRITEMODE_ANY, GR_ORIGIN_UPPER_LEFT, FXFALSE, &info)) {
-    const GLint winX = 0;
-    const GLint winY = fxMesa->height - 1;
-    const GLushort *data16 = (const GLushort *)((const GLubyte *)info.lfbPtr +
-	                                        (winY - y) * info.strideInBytes +
-                                                (winX + x) * 2);
-    const GLuint *data32 = (const GLuint *) data16;
-    GLuint i, j;
-    GLuint extraPixel = (n & 1);
-    n -= extraPixel;
+// static void fxReadRGBASpan_ARGB1555 (const GLcontext * ctx,
+//                                      struct gl_renderbuffer *rb,
+//                                      GLuint n,
+//                                      GLint x, GLint y,
+//                                      GLubyte rgba[][4])
+// {
+//  fxMesaContext fxMesa = FX_CONTEXT(ctx);
+//  GrBuffer_t currentFB = GR_BUFFER_BACKBUFFER;
+//  GrLfbInfo_t info;
+//  info.size = sizeof(GrLfbInfo_t);
+//  if (grLfbLock(GR_LFB_READ_ONLY, currentFB,
+//                GR_LFBWRITEMODE_ANY, GR_ORIGIN_UPPER_LEFT, FXFALSE, &info)) {
+//     const GLint winX = 0;
+//     const GLint winY = fxMesa->height - 1;
+//     const GLushort *data16 = (const GLushort *)((const GLubyte *)info.lfbPtr +
+// 	                                        (winY - y) * info.strideInBytes +
+//                                                 (winX + x) * 2);
+//     const GLuint *data32 = (const GLuint *) data16;
+//     GLuint i, j;
+//     GLuint extraPixel = (n & 1);
+//     n -= extraPixel;
 
-    for (i = j = 0; i < n; i += 2, j++) {
-	GLuint pixel = data32[j];
-	rgba[i][0] = FX_rgb_scale_5[(pixel >> 10) & 0x1F];
-	rgba[i][1] = FX_rgb_scale_5[(pixel >> 5)  & 0x1F];
-	rgba[i][2] = FX_rgb_scale_5[ pixel        & 0x1F];
-	rgba[i][3] = (pixel & 0x8000) ? 255 : 0;
-	rgba[i+1][0] = FX_rgb_scale_5[(pixel >> 26) & 0x1F];
-	rgba[i+1][1] = FX_rgb_scale_5[(pixel >> 21) & 0x1F];
-	rgba[i+1][2] = FX_rgb_scale_5[(pixel >> 16) & 0x1F];
-	rgba[i+1][3] = (pixel & 0x80000000) ? 255 : 0;
-    }
-    if (extraPixel) {
-       GLushort pixel = data16[n];
-       rgba[n][0] = FX_rgb_scale_5[(pixel >> 10) & 0x1F];
-       rgba[n][1] = FX_rgb_scale_5[(pixel >> 5)  & 0x1F];
-       rgba[n][2] = FX_rgb_scale_5[ pixel        & 0x1F];
-       rgba[n][3] = (pixel & 0x8000) ? 255 : 0;
-    }
+//     for (i = j = 0; i < n; i += 2, j++) {
+// 	GLuint pixel = data32[j];
+// 	rgba[i][0] = FX_rgb_scale_5[(pixel >> 10) & 0x1F];
+// 	rgba[i][1] = FX_rgb_scale_5[(pixel >> 5)  & 0x1F];
+// 	rgba[i][2] = FX_rgb_scale_5[ pixel        & 0x1F];
+// 	rgba[i][3] = (pixel & 0x8000) ? 255 : 0;
+// 	rgba[i+1][0] = FX_rgb_scale_5[(pixel >> 26) & 0x1F];
+// 	rgba[i+1][1] = FX_rgb_scale_5[(pixel >> 21) & 0x1F];
+// 	rgba[i+1][2] = FX_rgb_scale_5[(pixel >> 16) & 0x1F];
+// 	rgba[i+1][3] = (pixel & 0x80000000) ? 255 : 0;
+//     }
+//     if (extraPixel) {
+//        GLushort pixel = data16[n];
+//        rgba[n][0] = FX_rgb_scale_5[(pixel >> 10) & 0x1F];
+//        rgba[n][1] = FX_rgb_scale_5[(pixel >> 5)  & 0x1F];
+//        rgba[n][2] = FX_rgb_scale_5[ pixel        & 0x1F];
+//        rgba[n][3] = (pixel & 0x8000) ? 255 : 0;
+//     }
 
-    grLfbUnlock(GR_LFB_READ_ONLY, currentFB);
- }
-}
+//     grLfbUnlock(GR_LFB_READ_ONLY, currentFB);
+//  }
+// }
 
 /*
  * Read a span of 16-bit RGB pixels.  Note, we don't worry about cliprects
  * since OpenGL says obscured pixels have undefined values.
  */
-static void fxReadRGBASpan_RGB565 (const GLcontext * ctx,
-                                   struct gl_renderbuffer *rb,
-                                   GLuint n,
-                                   GLint x, GLint y,
-                                   GLubyte rgba[][4])
-{
- fxMesaContext fxMesa = FX_CONTEXT(ctx);
- GrBuffer_t currentFB = GR_BUFFER_BACKBUFFER;
- GrLfbInfo_t info;
- info.size = sizeof(GrLfbInfo_t);
- if (grLfbLock(GR_LFB_READ_ONLY, currentFB,
-               GR_LFBWRITEMODE_ANY, GR_ORIGIN_UPPER_LEFT, FXFALSE, &info)) {
-    const GLint winX = 0;
-    const GLint winY = fxMesa->height - 1;
-    const GLushort *data16 = (const GLushort *)((const GLubyte *)info.lfbPtr +
-	                                        (winY - y) * info.strideInBytes +
-                                                (winX + x) * 2);
-    const GLuint *data32 = (const GLuint *) data16;
-    GLuint i, j;
-    GLuint extraPixel = (n & 1);
-    n -= extraPixel;
+// static void fxReadRGBASpan_RGB565 (const GLcontext * ctx,
+//                                    struct gl_renderbuffer *rb,
+//                                    GLuint n,
+//                                    GLint x, GLint y,
+//                                    GLubyte rgba[][4])
+// {
+//  fxMesaContext fxMesa = FX_CONTEXT(ctx);
+//  GrBuffer_t currentFB = GR_BUFFER_BACKBUFFER;
+//  GrLfbInfo_t info;
+//  info.size = sizeof(GrLfbInfo_t);
+//  if (grLfbLock(GR_LFB_READ_ONLY, currentFB,
+//                GR_LFBWRITEMODE_ANY, GR_ORIGIN_UPPER_LEFT, FXFALSE, &info)) {
+//     const GLint winX = 0;
+//     const GLint winY = fxMesa->height - 1;
+//     const GLushort *data16 = (const GLushort *)((const GLubyte *)info.lfbPtr +
+// 	                                        (winY - y) * info.strideInBytes +
+//                                                 (winX + x) * 2);
+//     const GLuint *data32 = (const GLuint *) data16;
+//     GLuint i, j;
+//     GLuint extraPixel = (n & 1);
+//     n -= extraPixel;
 
-    for (i = j = 0; i < n; i += 2, j++) {
-        GLuint pixel = data32[j];
-	rgba[i][0] = FX_rgb_scale_5[(pixel >> 11) & 0x1F];
-	rgba[i][1] = FX_rgb_scale_6[(pixel >> 5)  & 0x3F];
-	rgba[i][2] = FX_rgb_scale_5[ pixel        & 0x1F];
-	rgba[i][3] = 255;
-	rgba[i+1][0] = FX_rgb_scale_5[(pixel >> 27) & 0x1F];
-	rgba[i+1][1] = FX_rgb_scale_6[(pixel >> 21) & 0x3F];
-	rgba[i+1][2] = FX_rgb_scale_5[(pixel >> 16) & 0x1F];
-	rgba[i+1][3] = 255;
-    }
-    if (extraPixel) {
-       GLushort pixel = data16[n];
-       rgba[n][0] = FX_rgb_scale_5[(pixel >> 11) & 0x1F];
-       rgba[n][1] = FX_rgb_scale_6[(pixel >> 5)  & 0x3F];
-       rgba[n][2] = FX_rgb_scale_5[ pixel        & 0x1F];
-       rgba[n][3] = 255;
-    }
+//     for (i = j = 0; i < n; i += 2, j++) {
+//         GLuint pixel = data32[j];
+// 	rgba[i][0] = FX_rgb_scale_5[(pixel >> 11) & 0x1F];
+// 	rgba[i][1] = FX_rgb_scale_6[(pixel >> 5)  & 0x3F];
+// 	rgba[i][2] = FX_rgb_scale_5[ pixel        & 0x1F];
+// 	rgba[i][3] = 255;
+// 	rgba[i+1][0] = FX_rgb_scale_5[(pixel >> 27) & 0x1F];
+// 	rgba[i+1][1] = FX_rgb_scale_6[(pixel >> 21) & 0x3F];
+// 	rgba[i+1][2] = FX_rgb_scale_5[(pixel >> 16) & 0x1F];
+// 	rgba[i+1][3] = 255;
+//     }
+//     if (extraPixel) {
+//        GLushort pixel = data16[n];
+//        rgba[n][0] = FX_rgb_scale_5[(pixel >> 11) & 0x1F];
+//        rgba[n][1] = FX_rgb_scale_6[(pixel >> 5)  & 0x3F];
+//        rgba[n][2] = FX_rgb_scale_5[ pixel        & 0x1F];
+//        rgba[n][3] = 255;
+//     }
 
-    grLfbUnlock(GR_LFB_READ_ONLY, currentFB);
- }
-}
+//     grLfbUnlock(GR_LFB_READ_ONLY, currentFB);
+//  }
+// }
 
 /*
  * Read a span of 32-bit RGB pixels.  Note, we don't worry about cliprects
  * since OpenGL says obscured pixels have undefined values.
  */
-static void fxReadRGBASpan_ARGB8888 (const GLcontext * ctx,
-                                     struct gl_renderbuffer *rb,
-                                     GLuint n,
-                                     GLint x, GLint y,
-                                     GLubyte rgba[][4])
-{
- fxMesaContext fxMesa = FX_CONTEXT(ctx);
- GrBuffer_t currentFB = GR_BUFFER_BACKBUFFER;
- GLuint i;
- grLfbReadRegion(currentFB, x, fxMesa->height - 1 - y, n, 1, n * 4, rgba);
- for (i = 0; i < n; i++) {
-     GLubyte c = rgba[i][0];
-     rgba[i][0] = rgba[i][2];
-     rgba[i][2] = c;
- }
-}
+// static void fxReadRGBASpan_ARGB8888 (const GLcontext * ctx,
+//                                      struct gl_renderbuffer *rb,
+//                                      GLuint n,
+//                                      GLint x, GLint y,
+//                                      GLubyte rgba[][4])
+// {
+//  fxMesaContext fxMesa = FX_CONTEXT(ctx);
+//  GrBuffer_t currentFB = GR_BUFFER_BACKBUFFER;
+//  GLuint i;
+//  grLfbReadRegion(currentFB, x, fxMesa->height - 1 - y, n, 1, n * 4, rgba);
+//  for (i = 0; i < n; i++) {
+//      GLubyte c = rgba[i][0];
+//      rgba[i][0] = rgba[i][2];
+//      rgba[i][2] = c;
+//  }
+// }
 
 
 /************************************************************************/
 /*****                    Depth functions (optimized)               *****/
 /************************************************************************/
 
-static void
-fxReadDepthSpan_Z16(GLcontext * ctx, struct gl_renderbuffer *rb,
-		    GLuint n, GLint x, GLint y, GLuint depth[])
-{
-   fxMesaContext fxMesa = FX_CONTEXT(ctx);
-   GLint bottom = fxMesa->height - 1;
-   GLushort depth16[MAX_WIDTH];
-   GLuint i;
+// static void
+// fxReadDepthSpan_Z16(GLcontext * ctx, struct gl_renderbuffer *rb,
+// 		    GLuint n, GLint x, GLint y, GLuint depth[])
+// {
+//    fxMesaContext fxMesa = FX_CONTEXT(ctx);
+//    GLint bottom = fxMesa->height - 1;
+//    GLushort depth16[MAX_WIDTH];
+//    GLuint i;
 
-   if (TDFX_DEBUG & VERBOSE_DRIVER) {
-      fprintf(stderr, "fxReadDepthSpan_Z16(...)\n");
-   }
+//    if (TDFX_DEBUG & VERBOSE_DRIVER) {
+//       fprintf(stderr, "fxReadDepthSpan_Z16(...)\n");
+//    }
 
-   grLfbReadRegion(GR_BUFFER_AUXBUFFER, x, bottom - y, n, 1, 0, depth16);
-   for (i = 0; i < n; i++) {
-      depth[i] = depth16[i];
-   }
-}
+//    grLfbReadRegion(GR_BUFFER_AUXBUFFER, x, bottom - y, n, 1, 0, depth16);
+//    for (i = 0; i < n; i++) {
+//       depth[i] = depth16[i];
+//    }
+// }
 
 
-static void
-fxReadDepthSpan_Z24(GLcontext * ctx, struct gl_renderbuffer *rb,
-		    GLuint n, GLint x, GLint y, GLuint depth[])
-{
-   fxMesaContext fxMesa = FX_CONTEXT(ctx);
-   GLint bottom = fxMesa->height - 1;
-   GLuint i;
+// static void
+// fxReadDepthSpan_Z24(GLcontext * ctx, struct gl_renderbuffer *rb,
+// 		    GLuint n, GLint x, GLint y, GLuint depth[])
+// {
+//    fxMesaContext fxMesa = FX_CONTEXT(ctx);
+//    GLint bottom = fxMesa->height - 1;
+//    GLuint i;
 
-   if (TDFX_DEBUG & VERBOSE_DRIVER) {
-      fprintf(stderr, "fxReadDepthSpan_Z24(...)\n");
-   }
+//    if (TDFX_DEBUG & VERBOSE_DRIVER) {
+//       fprintf(stderr, "fxReadDepthSpan_Z24(...)\n");
+//    }
 
-   grLfbReadRegion(GR_BUFFER_AUXBUFFER, x, bottom - y, n, 1, 0, depth);
-   for (i = 0; i < n; i++) {
-      depth[i] &= 0xffffff;
-   }
-}
+//    grLfbReadRegion(GR_BUFFER_AUXBUFFER, x, bottom - y, n, 1, 0, depth);
+//    for (i = 0; i < n; i++) {
+//       depth[i] &= 0xffffff;
+//    }
+// }
 
 
 /************************************************************************/
 /*****                    Stencil functions (optimized)             *****/
 /************************************************************************/
 
-static void
-fxWriteStencilSpan (GLcontext *ctx, struct gl_renderbuffer *rb,
-                    GLuint n, GLint x, GLint y,
-                    const GLstencil stencil[], const GLubyte mask[])
-{
- /*
-  * XXX todo
-  */
-}
+// static void
+// fxWriteStencilSpan (GLcontext *ctx, struct gl_renderbuffer *rb,
+//                     GLuint n, GLint x, GLint y,
+//                     const GLstencil stencil[], const GLubyte mask[])
+// {
+//  /*
+//   * XXX todo
+//   */
+// }
 
-static void
-fxReadStencilSpan(GLcontext * ctx, struct gl_renderbuffer *rb,
-		  GLuint n, GLint x, GLint y, GLstencil stencil[])
-{
-   fxMesaContext fxMesa = FX_CONTEXT(ctx);
-   GLint bottom = fxMesa->height - 1;
-   GLuint zs32[MAX_WIDTH];
-   GLuint i;
+// static void
+// fxReadStencilSpan(GLcontext * ctx, struct gl_renderbuffer *rb,
+// 		  GLuint n, GLint x, GLint y, GLstencil stencil[])
+// {
+//    fxMesaContext fxMesa = FX_CONTEXT(ctx);
+//    GLint bottom = fxMesa->height - 1;
+//    GLuint zs32[MAX_WIDTH];
+//    GLuint i;
 
-   if (TDFX_DEBUG & VERBOSE_DRIVER) {
-      fprintf(stderr, "fxReadStencilSpan(...)\n");
-   }
+//    if (TDFX_DEBUG & VERBOSE_DRIVER) {
+//       fprintf(stderr, "fxReadStencilSpan(...)\n");
+//    }
 
-   grLfbReadRegion(GR_BUFFER_AUXBUFFER, x, bottom - y, n, 1, 0, zs32);
-   for (i = 0; i < n; i++) {
-      stencil[i] = zs32[i] >> 24;
-   }
-}
+//    grLfbReadRegion(GR_BUFFER_AUXBUFFER, x, bottom - y, n, 1, 0, zs32);
+//    for (i = 0; i < n; i++) {
+//       stencil[i] = zs32[i] >> 24;
+//    }
+// }
 
-static void
-fxWriteStencilPixels (GLcontext *ctx, struct gl_renderbuffer *rb, GLuint n,
-                      const GLint x[], const GLint y[],
-                      const GLstencil stencil[],
-                      const GLubyte mask[])
-{
- /*
-  * XXX todo
-  */
-}
+// static void
+// fxWriteStencilPixels (GLcontext *ctx, struct gl_renderbuffer *rb, GLuint n,
+//                       const GLint x[], const GLint y[],
+//                       const GLstencil stencil[],
+//                       const GLubyte mask[])
+// {
+//  /*
+//   * XXX todo
+//   */
+// }
 
-static void
-fxReadStencilPixels (GLcontext *ctx, struct gl_renderbuffer *rb, GLuint n,
-                     const GLint x[], const GLint y[],
-                     GLstencil stencil[])
-{
- /*
-  * XXX todo
-  */
-}
+// static void
+// fxReadStencilPixels (GLcontext *ctx, struct gl_renderbuffer *rb, GLuint n,
+//                      const GLint x[], const GLint y[],
+//                      GLstencil stencil[])
+// {
+//  /*
+//   * XXX todo
+//   */
+// }
 
 
-void
-fxSetupDDSpanPointers(GLcontext * ctx)
-{
-   struct swrast_device_driver *swdd = _swrast_GetDeviceDriverReference( ctx );
-   fxMesaContext fxMesa = FX_CONTEXT(ctx);
+// void
+// fxSetupDDSpanPointers(GLcontext * ctx)
+// {
+//    struct swrast_device_driver *swdd = _swrast_GetDeviceDriverReference( ctx );
+//    fxMesaContext fxMesa = FX_CONTEXT(ctx);
 
-   switch (fxMesa->colDepth) {
-          case 15:
-               swdd->WriteRGBASpan = tdfxWriteRGBASpan_ARGB1555;
-               swdd->WriteRGBSpan = tdfxWriteRGBSpan_ARGB1555;
-               swdd->WriteRGBAPixels = tdfxWriteRGBAPixels_ARGB1555;
-               swdd->WriteMonoRGBASpan = tdfxWriteMonoRGBASpan_ARGB1555;
-               swdd->WriteMonoRGBAPixels = tdfxWriteMonoRGBAPixels_ARGB1555;
-               swdd->ReadRGBASpan = /*td*/fxReadRGBASpan_ARGB1555;
-               swdd->ReadRGBAPixels = tdfxReadRGBAPixels_ARGB1555;
+//    switch (fxMesa->colDepth) {
+//           case 15:
+//                swdd->WriteRGBASpan = tdfxWriteRGBASpan_ARGB1555;
+//                swdd->WriteRGBSpan = tdfxWriteRGBSpan_ARGB1555;
+//                swdd->WriteRGBAPixels = tdfxWriteRGBAPixels_ARGB1555;
+//                swdd->WriteMonoRGBASpan = tdfxWriteMonoRGBASpan_ARGB1555;
+//                swdd->WriteMonoRGBAPixels = tdfxWriteMonoRGBAPixels_ARGB1555;
+//                swdd->ReadRGBASpan = /*td*/fxReadRGBASpan_ARGB1555;
+//                swdd->ReadRGBAPixels = tdfxReadRGBAPixels_ARGB1555;
 
-               swdd->WriteDepthSpan = tdfxWriteDepthSpan_Z16;
-               swdd->WriteDepthPixels = tdfxWriteDepthPixels_Z16;
-               swdd->ReadDepthSpan = /*td*/fxReadDepthSpan_Z16;
-               swdd->ReadDepthPixels = tdfxReadDepthPixels_Z16;
-               break;
-          case 16:
-               swdd->WriteRGBASpan = tdfxWriteRGBASpan_RGB565;
-               swdd->WriteRGBSpan = tdfxWriteRGBSpan_RGB565;
-               swdd->WriteRGBAPixels = tdfxWriteRGBAPixels_RGB565;
-               swdd->WriteMonoRGBASpan = tdfxWriteMonoRGBASpan_RGB565;
-               swdd->WriteMonoRGBAPixels = tdfxWriteMonoRGBAPixels_RGB565;
-               swdd->ReadRGBASpan = /*td*/fxReadRGBASpan_RGB565;
-               swdd->ReadRGBAPixels = tdfxReadRGBAPixels_RGB565;
+//                swdd->WriteDepthSpan = tdfxWriteDepthSpan_Z16;
+//                swdd->WriteDepthPixels = tdfxWriteDepthPixels_Z16;
+//                swdd->ReadDepthSpan = /*td*/fxReadDepthSpan_Z16;
+//                swdd->ReadDepthPixels = tdfxReadDepthPixels_Z16;
+//                break;
+//           case 16:
+//                swdd->WriteRGBASpan = tdfxWriteRGBASpan_RGB565;
+//                swdd->WriteRGBSpan = tdfxWriteRGBSpan_RGB565;
+//                swdd->WriteRGBAPixels = tdfxWriteRGBAPixels_RGB565;
+//                swdd->WriteMonoRGBASpan = tdfxWriteMonoRGBASpan_RGB565;
+//                swdd->WriteMonoRGBAPixels = tdfxWriteMonoRGBAPixels_RGB565;
+//                swdd->ReadRGBASpan = /*td*/fxReadRGBASpan_RGB565;
+//                swdd->ReadRGBAPixels = tdfxReadRGBAPixels_RGB565;
 
-               swdd->WriteDepthSpan = tdfxWriteDepthSpan_Z16;
-               swdd->WriteDepthPixels = tdfxWriteDepthPixels_Z16;
-               swdd->ReadDepthSpan = /*td*/fxReadDepthSpan_Z16;
-               swdd->ReadDepthPixels = tdfxReadDepthPixels_Z16;
-               break;
-          case 32:
-               swdd->WriteRGBASpan = tdfxWriteRGBASpan_ARGB8888;
-               swdd->WriteRGBSpan = tdfxWriteRGBSpan_ARGB8888;
-               swdd->WriteRGBAPixels = tdfxWriteRGBAPixels_ARGB8888;
-               swdd->WriteMonoRGBASpan = tdfxWriteMonoRGBASpan_ARGB8888;
-               swdd->WriteMonoRGBAPixels = tdfxWriteMonoRGBAPixels_ARGB8888;
-               swdd->ReadRGBASpan = /*td*/fxReadRGBASpan_ARGB8888;
-               swdd->ReadRGBAPixels = tdfxReadRGBAPixels_ARGB8888;
+//                swdd->WriteDepthSpan = tdfxWriteDepthSpan_Z16;
+//                swdd->WriteDepthPixels = tdfxWriteDepthPixels_Z16;
+//                swdd->ReadDepthSpan = /*td*/fxReadDepthSpan_Z16;
+//                swdd->ReadDepthPixels = tdfxReadDepthPixels_Z16;
+//                break;
+//           case 32:
+//                swdd->WriteRGBASpan = tdfxWriteRGBASpan_ARGB8888;
+//                swdd->WriteRGBSpan = tdfxWriteRGBSpan_ARGB8888;
+//                swdd->WriteRGBAPixels = tdfxWriteRGBAPixels_ARGB8888;
+//                swdd->WriteMonoRGBASpan = tdfxWriteMonoRGBASpan_ARGB8888;
+//                swdd->WriteMonoRGBAPixels = tdfxWriteMonoRGBAPixels_ARGB8888;
+//                swdd->ReadRGBASpan = /*td*/fxReadRGBASpan_ARGB8888;
+//                swdd->ReadRGBAPixels = tdfxReadRGBAPixels_ARGB8888;
 
-               swdd->WriteDepthSpan = tdfxWriteDepthSpan_Z24;
-               swdd->WriteDepthPixels = tdfxWriteDepthPixels_Z24;
-               swdd->ReadDepthSpan = /*td*/fxReadDepthSpan_Z24;
-               swdd->ReadDepthPixels = tdfxReadDepthPixels_Z24;
-               break;
-   }
+//                swdd->WriteDepthSpan = tdfxWriteDepthSpan_Z24;
+//                swdd->WriteDepthPixels = tdfxWriteDepthPixels_Z24;
+//                swdd->ReadDepthSpan = /*td*/fxReadDepthSpan_Z24;
+//                swdd->ReadDepthPixels = tdfxReadDepthPixels_Z24;
+//                break;
+//    }
 
-   if (fxMesa->haveHwStencil) {
-      swdd->WriteStencilSpan = fxWriteStencilSpan;
-      swdd->ReadStencilSpan = fxReadStencilSpan;
-      swdd->WriteStencilPixels = fxWriteStencilPixels;
-      swdd->ReadStencilPixels = fxReadStencilPixels;
-   }
-#if 0
-   swdd->WriteCI8Span		= NULL;
-   swdd->WriteCI32Span		= NULL;
-   swdd->WriteMonoCISpan	= NULL;
-   swdd->WriteCI32Pixels	= NULL;
-   swdd->WriteMonoCIPixels	= NULL;
-   swdd->ReadCI32Span		= NULL;
-   swdd->ReadCI32Pixels		= NULL;
+//    if (fxMesa->haveHwStencil) {
+//       swdd->WriteStencilSpan = fxWriteStencilSpan;
+//       swdd->ReadStencilSpan = fxReadStencilSpan;
+//       swdd->WriteStencilPixels = fxWriteStencilPixels;
+//       swdd->ReadStencilPixels = fxReadStencilPixels;
+//    }
+// #if 0
+//    swdd->WriteCI8Span		= NULL;
+//    swdd->WriteCI32Span		= NULL;
+//    swdd->WriteMonoCISpan	= NULL;
+//    swdd->WriteCI32Pixels	= NULL;
+//    swdd->WriteMonoCIPixels	= NULL;
+//    swdd->ReadCI32Span		= NULL;
+//    swdd->ReadCI32Pixels		= NULL;
 
-   swdd->SpanRenderStart        = tdfxSpanRenderStart; /* BEGIN_BOARD_LOCK */
-   swdd->SpanRenderFinish       = tdfxSpanRenderFinish; /* END_BOARD_LOCK */
-#endif
-}
+//    swdd->SpanRenderStart        = tdfxSpanRenderStart; /* BEGIN_BOARD_LOCK */
+//    swdd->SpanRenderFinish       = tdfxSpanRenderFinish; /* END_BOARD_LOCK */
+// #endif
+// }
 
 
 #else

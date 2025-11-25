@@ -38,8 +38,8 @@ extern "C" {
 #endif
 
 
-#define FXMESA_MAJOR_VERSION 6
-#define FXMESA_MINOR_VERSION 3
+#define FXMESA_MAJOR_VERSION 7
+#define FXMESA_MINOR_VERSION 4
 
 
 /*
