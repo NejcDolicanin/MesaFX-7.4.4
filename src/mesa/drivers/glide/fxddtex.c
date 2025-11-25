@@ -62,6 +62,7 @@ _mesa_halve2x2_teximage2d ( GLcontext *ctx,
    GLint srcRowStride = srcWidth * bytesPerPixel;
    GLubyte *src = (GLubyte *)srcImage;
    GLubyte *dst = dstImage;
+   GLuint dstImageOffsets = 0;
 
    GLuint bpt = 0;
    GLubyte *_s = NULL;
@@ -93,7 +94,7 @@ _mesa_halve2x2_teximage2d ( GLcontext *ctx,
                               &_mesa_texformat_rgba8888_rev, src,
                               0, 0, 0, /* dstX/Y/Zoffset */
                               srcRowStride, /* dstRowStride */
-                              0, /* dstImageStride */
+                              &dstImageOffsets, /* dstImageOffsets */
                               srcWidth, srcHeight, 1,
                               texImage->_BaseFormat, _t,
                               srcImage, &ctx->DefaultPacking);
@@ -141,7 +142,7 @@ _mesa_halve2x2_teximage2d ( GLcontext *ctx,
                                       texImage->TexFormat, dstImage,
                                       0, 0, 0, /* dstX/Y/Zoffset */
                                       dstWidth * bpt,
-                                      0, /* dstImageStride */
+                                      &dstImageOffsets, /* dstImageOffsets */
                                       dstWidth, dstHeight, 1,
                                       GL_BGRA, CHAN_TYPE, dst, &ctx->DefaultPacking);
       FREE(dst);
@@ -1235,6 +1236,7 @@ adjust2DRatio (GLcontext *ctx,
    const GLint newWidth = width * mml->wScale;
    const GLint newHeight = height * mml->hScale;
    GLvoid *tempImage;
+   GLuint dstImageOffsets = 0;
 
    if (!texImage->IsCompressed) {
       GLubyte *destAddr;
@@ -1247,7 +1249,7 @@ adjust2DRatio (GLcontext *ctx,
                                       texImage->TexFormat, tempImage,
                                       0, 0, 0, /* dstX/Y/Zoffset */
                                       width * texelBytes, /* dstRowStride */
-                                      0, /* dstImageStride */
+                                      &dstImageOffsets, /* dstImageOffsets */
                                       width, height, 1,
                                       format, type, pixels, packing);
 
@@ -1278,7 +1280,7 @@ adjust2DRatio (GLcontext *ctx,
                               &_mesa_texformat_rgba8888_rev, rawImage,
                               0, 0, 0, /* dstX/Y/Zoffset */
                               width * rawBytes, /* dstRowStride */
-                              0, /* dstImageStride */
+                              &dstImageOffsets, /* dstImageOffsets */
                               width, height, 1,
                               format, type, pixels, packing);
       _mesa_rescale_teximage2d(rawBytes,
@@ -1291,7 +1293,7 @@ adjust2DRatio (GLcontext *ctx,
                                       texImage->TexFormat, texImage->Data,
                                       xoffset * mml->wScale, yoffset * mml->hScale, 0, /* dstX/Y/Zoffset */
                                       dstRowStride,
-                                      0, /* dstImageStride */
+                                      &dstImageOffsets, /* dstImageOffsets */
                                       newWidth, newHeight, 1,
                                       GL_RGBA, CHAN_TYPE, tempImage, &ctx->DefaultPacking);
       FREE(rawImage);
@@ -1402,8 +1404,8 @@ fxDDTexImage2D(GLcontext * ctx, GLenum target, GLint level,
                                                                mml->width,
                                                                mml->height,
                                                                1,
-                                                               internalFormat);
-      dstRowStride = _mesa_compressed_row_stride(internalFormat, mml->width);
+                                                               mesaFormat);
+      dstRowStride = _mesa_compressed_row_stride(mesaFormat, mml->width);
       texImage->Data = _mesa_malloc(texImage->CompressedSize);
    } else {
       dstRowStride = mml->width * texelBytes;
@@ -1524,7 +1526,7 @@ fxDDTexSubImage2D(GLcontext * ctx, GLenum target, GLint level,
 
    texelBytes = texImage->TexFormat->TexelBytes;
    if (texImage->IsCompressed) {
-      dstRowStride = _mesa_compressed_row_stride(texImage->InternalFormat, mml->width);
+      dstRowStride = _mesa_compressed_row_stride(texImage->TexFormat->MesaFormat, mml->width);
    } else {
       dstRowStride = mml->width * texelBytes;
    }
@@ -1551,7 +1553,7 @@ fxDDTexSubImage2D(GLcontext * ctx, GLenum target, GLint level,
                                       texImage->TexFormat, (GLubyte *) texImage->Data,
                                       xoffset, yoffset, 0, /* dstX/Y/Zoffset */
                                       dstRowStride,
-                                      0, /* dstImageStride */
+                                      texImage->ImageOffsets,
                                       width, height, 1,
                                       format, type, pixels, packing);
    }
@@ -1665,11 +1667,12 @@ fxDDCompressedTexImage2D (GLcontext *ctx, GLenum target,
 
    /* allocate new storage for texture image, if needed */
    if (!texImage->Data) {
+      const GLuint mesaFormat = texImage->TexFormat->MesaFormat;
       texImage->CompressedSize = _mesa_compressed_texture_size(ctx,
                                                                mml->width,
                                                                mml->height,
                                                                1,
-                                                               internalFormat);
+                                                               mesaFormat);
       texImage->Data = _mesa_malloc(texImage->CompressedSize);
       if (!texImage->Data) {
          _mesa_error(ctx, GL_OUT_OF_MEMORY, "glCompressedTexImage2D");
@@ -1693,9 +1696,10 @@ fxDDCompressedTexImage2D (GLcontext *ctx, GLenum target,
        *    we replicate the data over the padded area.
        * For now, we take 2) + 3) but texelfetchers will be wrong!
        */
-      GLuint srcRowStride = _mesa_compressed_row_stride(internalFormat, width);
+      const GLuint mesaFormat = texImage->TexFormat->MesaFormat;
+      GLuint srcRowStride = _mesa_compressed_row_stride(mesaFormat, width);
 
-      GLuint destRowStride = _mesa_compressed_row_stride(internalFormat,
+      GLuint destRowStride = _mesa_compressed_row_stride(mesaFormat,
                                                   mml->width);
 
       _mesa_upscale_teximage2d(srcRowStride, (height+3) / 4,
@@ -1744,14 +1748,17 @@ fxDDCompressedTexSubImage2D( GLcontext *ctx, GLenum target,
    mml = FX_MIPMAP_DATA(texImage);
    assert(mml);
 
-   srcRowStride = _mesa_compressed_row_stride(texImage->InternalFormat, width);
+   {
+      const GLuint mesaFormat = texImage->TexFormat->MesaFormat;
+      srcRowStride = _mesa_compressed_row_stride(mesaFormat, width);
 
-   destRowStride = _mesa_compressed_row_stride(texImage->InternalFormat,
+      destRowStride = _mesa_compressed_row_stride(mesaFormat,
                                                mml->width);
-   dest = _mesa_compressed_image_address(xoffset, yoffset, 0,
-                                         texImage->InternalFormat,
+      dest = _mesa_compressed_image_address(xoffset, yoffset, 0,
+                                         mesaFormat,
                                          mml->width,
                               (GLubyte*) texImage->Data);
+   }
 
    rows = height / 4; /* hardcoded 4, but works for FXT1/DXTC */
 
