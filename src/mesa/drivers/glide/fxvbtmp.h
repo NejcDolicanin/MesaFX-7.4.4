@@ -46,8 +46,8 @@ static void TAG(emit)( GLcontext *ctx,
    GLuint tc0_size, tc1_size, col_size;
    GLfloat (*proj)[4] = VB->NdcPtr->data; 
    GLuint proj_stride = VB->NdcPtr->stride;
-   GLfloat (*psize)[4];
-   GLuint psize_stride;
+   GLfloat (*psize)[4] = NULL;
+   GLuint psize_stride = 0;
    GLfloat (*fog)[4];
    GLuint fog_stride;
    GrVertex *v = (GrVertex *)dest;
@@ -56,9 +56,23 @@ static void TAG(emit)( GLcontext *ctx,
    const GLfloat *const s = ctx->Viewport._WindowMap.m;
    int i;
 
+   /* Nejc - In Mesa 7.x, per-vertex point size (after attenuation) is carried in
+    * the generic attribute _TNL_ATTRIB_POINTSIZE. When SETUP_PSIZ is set,
+    * fetch that attribute so we can preserve the original MesaFX behavior
+    * of using per-vertex point sizes instead of a constant ctx->Point.Size.
+    */
    if (IND & SETUP_PSIZ) {
-      psize = VB->PointSizePtr->data;
-      psize_stride = VB->PointSizePtr->stride;
+      /* In Mesa 7.x TNL, per-vertex point size is stored in a GLvector4f
+       * attached to VB->AttribPtr[_TNL_ATTRIB_POINTSIZE] by the
+       * point-attenuation stage (see t_vb_points.c). Restore the
+       * original MesaFX behavior by sourcing v->psize from that
+       * vector instead of using a constant ctx->Point.Size.
+       */
+      GLvector4f *sizeVec = VB->AttribPtr[_TNL_ATTRIB_POINTSIZE];
+      if (sizeVec) {
+         psize = sizeVec->data;
+         psize_stride = sizeVec->stride;
+      }
    }
 
    if (IND & SETUP_TMU0) {
@@ -97,7 +111,7 @@ static void TAG(emit)( GLcontext *ctx,
 
    if (start) {
       proj =  (GLfloat (*)[4])((GLubyte *)proj + start * proj_stride);
-      if (IND & SETUP_PSIZ)
+      if ((IND & SETUP_PSIZ) && psize)
          psize =  (GLfloat (*)[4])((GLubyte *)psize + start * psize_stride);
       if (IND & SETUP_TMU0)
 	 tc0 =  (GLfloat (*)[4])((GLubyte *)tc0 + start * tc0_stride);
@@ -113,8 +127,13 @@ static void TAG(emit)( GLcontext *ctx,
 
    for (i=start; i < end; i++, v++) {
       if (IND & SETUP_PSIZ) {
-         v->psize = psize[0][0];
-         psize =  (GLfloat (*)[4])((GLubyte *)psize +  psize_stride);
+         if (psize) {
+            v->psize = psize[0][0];
+            psize =  (GLfloat (*)[4])((GLubyte *)psize + psize_stride);
+         } else {
+            /* Fallback: no per-vertex array, use current context size. */
+            v->psize = ctx->Point.Size;
+         }
       }
    
       if (IND & SETUP_XYZW) {
