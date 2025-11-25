@@ -504,7 +504,11 @@ fxDDIsTextureResident(GLcontext *ctx, struct gl_texture_object *tObj)
 static GrTexTable_t
 convertPalette(const fxMesaContext fxMesa, FxU32 data[256], const struct gl_color_table *table)
 {
-   const GLubyte *tableUB = (const GLubyte *) table->TableF;
+   /* Nejc In Mesa 7.x, TableF holds floats in [0,1] and TableUB holds 0-255 bytes.
+    * Use TableUB here, just like the DRI tdfx driver does, so palettes are
+    * interpreted correctly regardless of the original ColorTable type.
+    */
+   const GLubyte *tableUB = table->TableUB;
    GLint width = table->Size;
    FxU32 r, g, b, a;
    GLint i;
