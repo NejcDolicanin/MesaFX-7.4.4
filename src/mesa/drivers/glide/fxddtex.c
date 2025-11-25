@@ -1400,6 +1400,7 @@ fxDDTexImage2D(GLcontext * ctx, GLenum target, GLint level,
    /* allocate mipmap buffer */
    assert(!texImage->Data);
    if (texImage->IsCompressed) {
+      const GLuint mesaFormat = texImage->TexFormat->MesaFormat;
       texImage->CompressedSize = _mesa_compressed_texture_size(ctx,
                                                                mml->width,
                                                                mml->height,
