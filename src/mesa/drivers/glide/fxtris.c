@@ -152,49 +152,58 @@ fx_translate_vertex( GLcontext *ctx, const GrVertex *src, SWvertex *dst)
    GLuint ts1 = fxMesa->tmu_source[1];
    GLfloat w = 1.0F / src->oow;
 
-   dst->win[0] = src->x;
-   dst->win[1] = src->y;
-   dst->win[2] = src->ooz;
-   dst->win[3] = src->oow;
+   /* Window position / clip-space W go into FRAG_ATTRIB_WPOS */
+   dst->attrib[FRAG_ATTRIB_WPOS][0] = src->x;
+   dst->attrib[FRAG_ATTRIB_WPOS][1] = src->y;
+   dst->attrib[FRAG_ATTRIB_WPOS][2] = src->ooz;
+   dst->attrib[FRAG_ATTRIB_WPOS][3] = src->oow;
 
 #if FX_PACKEDCOLOR
+   /* Primary color is stored as integer rgba */
    dst->color[0] = src->pargb[2];
    dst->color[1] = src->pargb[1];
    dst->color[2] = src->pargb[0];
    dst->color[3] = src->pargb[3];
 
-   dst->specular[0] = src->pspec[2];
-   dst->specular[1] = src->pspec[1];
-   dst->specular[2] = src->pspec[0];
+   /* Secondary/specular color goes into FRAG_ATTRIB_COL1 as floats */
+   dst->attrib[FRAG_ATTRIB_COL1][0] = UBYTE_TO_FLOAT(src->pspec[2]);
+   dst->attrib[FRAG_ATTRIB_COL1][1] = UBYTE_TO_FLOAT(src->pspec[1]);
+   dst->attrib[FRAG_ATTRIB_COL1][2] = UBYTE_TO_FLOAT(src->pspec[0]);
+   dst->attrib[FRAG_ATTRIB_COL1][3] = 1.0F;
 #else  /* !FX_PACKEDCOLOR */
    dst->color[0] = src->r;
    dst->color[1] = src->g;
    dst->color[2] = src->b;
    dst->color[3] = src->a;
 
-   dst->specular[0] = src->r1;
-   dst->specular[1] = src->g1;
-   dst->specular[2] = src->g1;
+   dst->attrib[FRAG_ATTRIB_COL1][0] = src->r1;
+   dst->attrib[FRAG_ATTRIB_COL1][1] = src->g1;
+   dst->attrib[FRAG_ATTRIB_COL1][2] = src->b1;
+   dst->attrib[FRAG_ATTRIB_COL1][3] = 1.0F;
 #endif /* !FX_PACKEDCOLOR */
 
-   dst->texcoord[ts0][0] = fxMesa->inv_s0scale * src->tmuvtx[0].sow * w;
-   dst->texcoord[ts0][1] = fxMesa->inv_t0scale * src->tmuvtx[0].tow * w;
+   /* Map TMU coordinates to FRAG_ATTRIB_TEX0/1 attributes */
+   dst->attrib[FRAG_ATTRIB_TEX0 + ts0][0] = fxMesa->inv_s0scale * src->tmuvtx[0].sow * w;
+   dst->attrib[FRAG_ATTRIB_TEX0 + ts0][1] = fxMesa->inv_t0scale * src->tmuvtx[0].tow * w;
 
    if (fxMesa->stw_hint_state & GR_STWHINT_W_DIFF_TMU0)
-      dst->texcoord[ts0][3] = src->tmuvtx[0].oow * w;
+      dst->attrib[FRAG_ATTRIB_TEX0 + ts0][3] = src->tmuvtx[0].oow * w;
    else
-      dst->texcoord[ts0][3] = 1.0F;
+      dst->attrib[FRAG_ATTRIB_TEX0 + ts0][3] = 1.0F;
 
    if (fxMesa->SetupIndex & SETUP_TMU1) {
-      dst->texcoord[ts1][0] = fxMesa->inv_s1scale * src->tmuvtx[1].sow * w;
-      dst->texcoord[ts1][1] = fxMesa->inv_t1scale * src->tmuvtx[1].tow * w;
+      dst->attrib[FRAG_ATTRIB_TEX0 + ts1][0] = fxMesa->inv_s1scale * src->tmuvtx[1].sow * w;
+      dst->attrib[FRAG_ATTRIB_TEX0 + ts1][1] = fxMesa->inv_t1scale * src->tmuvtx[1].tow * w;
 
       if (fxMesa->stw_hint_state & GR_STWHINT_W_DIFF_TMU1)
-	 dst->texcoord[ts1][3] = src->tmuvtx[1].oow * w;
+         dst->attrib[FRAG_ATTRIB_TEX0 + ts1][3] = src->tmuvtx[1].oow * w;
       else
-	 dst->texcoord[ts1][3] = 1.0F;
+         dst->attrib[FRAG_ATTRIB_TEX0 + ts1][3] = 1.0F;
    }
 
+   /* Nejc Preserve per-vertex point size as computed by the Glide/T&L path.
+    * This is used by swrast when rendering wide points / point sprites.
+    */
    dst->pointSize = src->psize;
 }
 
@@ -379,7 +388,7 @@ static void fx_draw_point_wide ( fxMesaContext fxMesa,
  const GLcontext *ctx = fxMesa->glCtx;
  const GLfloat psize = (ctx->_TriangleCaps & DD_POINT_ATTEN)
                        ? CLAMP(v0->psize, ctx->Point.MinSize, ctx->Point.MaxSize)
-                       : ctx->Point._Size; /* clamped */
+                       : ctx->Point.Size; /* clamped */
 
  if (ctx->Point.PointSprite) {
     fx_draw_point_sprite(fxMesa, v0, psize);
@@ -456,7 +465,7 @@ static void fx_draw_point_wide_aa ( fxMesaContext fxMesa,
  const GLcontext *ctx = fxMesa->glCtx;
  const GLfloat psize = (ctx->_TriangleCaps & DD_POINT_ATTEN)
                        ? CLAMP(v0->psize, ctx->Point.MinSize, ctx->Point.MaxSize)
-                       : ctx->Point._Size; /* clamped */
+                       : ctx->Point.Size; /* clamped */
 
  if (ctx->Point.PointSprite) {
     fx_draw_point_sprite(fxMesa, v0, psize);
