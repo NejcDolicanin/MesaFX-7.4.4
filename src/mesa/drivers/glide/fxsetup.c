@@ -154,7 +154,7 @@ fxTexValidate(GLcontext * ctx, struct gl_texture_object *tObj)
       }
    }
 
-   ti->baseLevelInternalFormat = tObj->Image[0][minl]->Format;
+   ti->baseLevelInternalFormat = tObj->Image[0][minl]->_BaseFormat;
 
    ti->validated = GL_TRUE;
 

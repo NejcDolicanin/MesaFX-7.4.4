@@ -228,12 +228,26 @@ static GrScreenResolution_t fxBestResolution (int width, int height)
         { GR_RESOLUTION_1856x1392, 1856, 1392 },
         { GR_RESOLUTION_1920x1440, 1920, 1440 },
         { GR_RESOLUTION_2048x1536, 2048, 1536 },
-        { GR_RESOLUTION_2048x2048, 2048, 2048 }
- };
+        { GR_RESOLUTION_2048x2048, 2048, 2048 },
+        /* nd Extended */
+        {GR_RESOLUTION_1280x720, 1280, 720},
+        {GR_RESOLUTION_1280x800, 1280, 800},
+        {GR_RESOLUTION_1360x768, 1360, 768},
+        {GR_RESOLUTION_1440x900, 1440, 900},
+        {GR_RESOLUTION_1600x900, 1600, 900},
+        {GR_RESOLUTION_1680x720, 1680, 720},
+        {GR_RESOLUTION_1680x1050, 1680, 1050},
+        {GR_RESOLUTION_1792x768, 1792, 768},
+        {GR_RESOLUTION_1920x800, 1920, 800},
+        {GR_RESOLUTION_1920x1080, 1920, 1080},
+        {GR_RESOLUTION_1920x1200, 1920, 1200},
+        /* This one added so we have an unreachable max, if more come */
+        {GR_RESOLUTION_3840x2160, 3840, 2160}};
+ 
 
  int i, size;
  int lastvalidres = GR_RESOLUTION_640x480;
- int min = 2048 * 2048; /* max is GR_RESOLUTION_2048x2048 */
+ int min = 3840 * 2160; // max is GR_RESOLUTION_3840x2160
  GrResolution resTemplate = {
               GR_QUERY_ANY,
               GR_QUERY_ANY,
@@ -276,7 +290,53 @@ fxMesaCreateBestContext(GLuint win, GLint width, GLint height,
     return NULL;
  }
 
- return fxMesaCreateContext(win, res, GR_REFRESH_60Hz, attribList);
+/* Get best Refresh rate*/
+   GrScreenRefresh_t refresh = GR_REFRESH_60Hz;    /* Default refresh */
+   int refreshFromReg = ReadRefreshFromRegistry(); /* Or env variable */
+
+   // Convert to GrScreenRefresh_t
+   if (refreshFromReg > 0)
+   {
+      switch (refreshFromReg)
+      {
+      case 60:
+         refresh = GR_REFRESH_60Hz;
+         break;
+      case 70:
+         refresh = GR_REFRESH_70Hz;
+         break;
+      case 72:
+         refresh = GR_REFRESH_72Hz;
+         break;
+      case 75:
+         refresh = GR_REFRESH_75Hz;
+         break;
+      case 80:
+         refresh = GR_REFRESH_80Hz;
+         break;
+      case 85:
+         refresh = GR_REFRESH_85Hz;
+         break;
+      case 90:
+         refresh = GR_REFRESH_90Hz;
+         break;
+      case 100:
+         refresh = GR_REFRESH_100Hz;
+         break;
+      case 120:
+         refresh = GR_REFRESH_120Hz;
+         break;
+      case 144:
+         refresh = GR_REFRESH_144Hz;
+         break;
+      default:
+         /* Unknown refresh, ignore override */
+         break;
+      }
+   }
+
+   return fxMesaCreateContext(win, res, refresh, attribList);
+ /* return fxMesaCreateContext(win, res, GR_REFRESH_60Hz, attribList); */
 }
 
 
@@ -357,7 +417,7 @@ fxMesaCreateContext(GLuint win,
  }
 
  grSstSelect(glbCurrentBoard);
- /*grEnable(GR_OPENGL_MODE_EXT);*/ /* [koolsmoky] */
+ grEnable(GR_OPENGL_MODE_EXT); /* Pass to glide we are OpenGL */
  voodoo = &glbHWConfig.SSTs[glbCurrentBoard];
 
  fxMesa = (fxMesaContext)CALLOC_STRUCT(tfxMesaContext);
@@ -383,6 +443,23 @@ fxMesaCreateContext(GLuint win,
                       Glide->txMipQuantize &&
                       Glide->txPalToNcc && !getenv("MESA_FX_IGNORE_TEXUS2");
 
+/* Nejc 16bit Textures override from 3dfx tools */
+   if (fxGetRegistryOrEnvironmentString("FX_MESA_FORCE_16BPP_TEXTURES") != NULL)
+   {
+         fxMesa->HaveTexFmt = GL_FALSE;
+   }
+
+   /* Nejc 16bit pixel format override - force at context creation, safety */
+   if (fxGetRegistryOrEnvironmentString("FX_MESA_FORCE_16BPP_PIX") != NULL)
+   {
+      int boardType = fxMesaSelectCurrentBoard(0);
+      if (boardType == GR_SSTTYPE_Voodoo5 || boardType == GR_SSTTYPE_Voodoo4)
+      {
+         colDepth = 16;
+         depthSize = 16;
+      }
+   }
+
  /* Determine if we need vertex swapping, RGB order and SLI/AA */
  sliaa = 0;
  switch (fxMesa->type) {
@@ -402,6 +479,9 @@ fxMesaCreateContext(GLuint win,
              if ((str = Glide->grGetRegistryOrEnvironmentStringExt("SSTH3_SLI_AA_CONFIGURATION")) != NULL) {
                 sliaa = atoi(str);
              }
+             fxMesa->bgrOrder = GL_FALSE;     /* correct for Voodoo 4/5 */
+             fxMesa->snapVertices = GL_FALSE;
+             break;
         case GR_SSTTYPE_Voodoo3:
         default:
              fxMesa->bgrOrder = GL_FALSE;
@@ -697,7 +777,6 @@ if (TDFX_DEBUG & VERBOSE_DRIVER)
       goto errorhandler;
    }
 
-
    fxMesa->glBuffer = _mesa_create_framebuffer(fxMesa->glVis);
    /* Nejc: From Mesa6.4.2 Use new framebuffer infrastructure with renderbuffers */
    //fxMesa->glBuffer = fxNewFramebuffer(ctx, fxMesa->glVis);
@@ -717,23 +796,12 @@ if (TDFX_DEBUG & VERBOSE_DRIVER)
       goto errorhandler;
    }
 
-   glbTotNumCtx++;
-
-   /* install signal handlers */
-#if defined(__linux__)
-   /* Only install if environment var. is not set. */
-   if (!getenv("MESA_FX_NO_SIGNALS")) {
-      signal(SIGINT, cleangraphics_handler);
-      signal(SIGHUP, cleangraphics_handler);
-      signal(SIGPIPE, cleangraphics_handler);
-      signal(SIGFPE, cleangraphics_handler);
-      signal(SIGBUS, cleangraphics_handler);
-      signal(SIGILL, cleangraphics_handler);
-      signal(SIGSEGV, cleangraphics_handler);
-      signal(SIGTERM, cleangraphics_handler);
+   if (TDFX_DEBUG & VERBOSE_DRIVER)
+   {
+      fprintf(stderr, "fxNewFramebuffer completed successfully\n");
    }
-#endif
 
+   glbTotNumCtx++;
    return fxMesa;
 
 errorhandler:
@@ -765,7 +833,6 @@ errorhandler:
  return NULL;
 }
 
-
 /*
  * Function to set the new window size in the context (mainly for the Voodoo Rush)
  */
@@ -781,7 +848,6 @@ fxMesaUpdateScreenSize(fxMesaContext fxMesa)
       fxUpdateFramebufferSize(fxMesa->glCtx);
    }
 }
-
 
 /*
  * Destroy the given FX/Mesa context.
