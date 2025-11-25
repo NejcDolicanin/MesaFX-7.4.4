@@ -50,7 +50,7 @@ extern "C" {
 }
 #endif
 
-#include "GL/fxmesa.h"
+#include "glide/fxmesa.h"
 #include "glheader.h"
 #include "glapi.h"
 #include "imports.h"

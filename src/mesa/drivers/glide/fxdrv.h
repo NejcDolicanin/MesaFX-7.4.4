@@ -54,7 +54,7 @@
 #include "main/matrix.h"
 #include "main/mtypes.h"
 
-#include "GL/fxmesa.h"
+#include "fxmesa.h"
 #include "fxglidew.h"
 
 #include "math/m_vector.h"
