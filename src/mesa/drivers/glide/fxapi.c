@@ -639,7 +639,7 @@ fxMesaCreateContext(GLuint win,
                       fxMesa->snapVertices ? "" : "no ");
    }
 
-  sprintf(fxMesa->rendererString, "Mesa %s v0.63 %s%s",
+  sprintf(fxMesa->rendererString, "Mesa %s v0.74 %s%s",
           grGetString(GR_RENDERER),
           grGetString(GR_HARDWARE),
           ((fxMesa->type < GR_SSTTYPE_Voodoo4) && (voodoo->numChips > 1)) ? " SLI" : "");
@@ -664,7 +664,19 @@ fxMesaCreateContext(GLuint win,
       goto errorhandler;
    }
 
+   if (TDFX_DEBUG & VERBOSE_DRIVER)
+   {
+      fprintf(stderr, "Visual created successfully, about to init driver functions...\n");
+   }
+
+   /* 
+   * Init default driver functions then plug in our tdfx-specific functions
+   */
    _mesa_init_driver_functions(&functions);
+    // Nejc added
+   fxSetupDDPointers_PreContext(&functions, fxMesa);
+   fxInitTextureFuncs(&functions);
+
    ctx = fxMesa->glCtx = _mesa_create_context(fxMesa->glVis, shareCtx,
 					      &functions, (void *) fxMesa);
    if (!ctx) {
@@ -672,6 +684,13 @@ fxMesaCreateContext(GLuint win,
       goto errorhandler;
    }
 
+   /* Nejc CRITICAL: Link the fxMesa context to the Mesa context so FX_CONTEXT() macro works. This links the Mesa GL context to the driver-specific context */
+   ctx->DriverCtx = fxMesa;
+
+if (TDFX_DEBUG & VERBOSE_DRIVER)
+   {
+      fprintf(stderr, "Mesa context created successfully. About to call fxDDInitFxMesaContext...\n");
+   }
 
    if (!fxDDInitFxMesaContext(fxMesa)) {
       str = "fxDDInitFxMesaContext";
@@ -680,6 +699,9 @@ fxMesaCreateContext(GLuint win,
 
 
    fxMesa->glBuffer = _mesa_create_framebuffer(fxMesa->glVis);
+   /* Nejc: From Mesa6.4.2 Use new framebuffer infrastructure with renderbuffers */
+   //fxMesa->glBuffer = fxNewFramebuffer(ctx, fxMesa->glVis);
+
 #if 0
 /* XXX this is a complete mess :(
  *	_mesa_add_soft_renderbuffers
@@ -752,6 +774,12 @@ fxMesaUpdateScreenSize(fxMesaContext fxMesa)
 {
    fxMesa->width = FX_grSstScreenWidth();
    fxMesa->height = FX_grSstScreenHeight();
+
+   /*Nejc - Update framebuffer size */
+   if (fxMesa->glCtx)
+   {
+      fxUpdateFramebufferSize(fxMesa->glCtx);
+   }
 }
 
 
@@ -880,6 +908,12 @@ fxMesaMakeCurrent(fxMesaContext fxMesa)
    _mesa_make_current(fxMesa->glCtx, fxMesa->glBuffer, fxMesa->glBuffer);
 
    fxSetupDDPointers(fxMesa->glCtx);
+
+    /* Nejc - The first time we call MakeCurrent we set the initial viewport size */
+   if (fxMesa->glCtx->Viewport.Width == 0)
+   {
+      _mesa_set_viewport(fxMesa->glCtx, 0, 0, fxMesa->width, fxMesa->height);
+   }
 }
 
 
@@ -928,6 +962,7 @@ fxCloseHardware(void)
 {
    if (glbGlideInitialized) {
       if (glbTotNumCtx == 0) {
+    grDisable(GR_OPENGL_MODE_EXT); /* Added for openGl */
 	 grGlideShutdown();
 	 glbGlideInitialized = 0;
       }
