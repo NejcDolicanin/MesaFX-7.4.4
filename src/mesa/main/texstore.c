@@ -1305,6 +1305,50 @@ _mesa_texstore_rgb565(TEXSTORE_PARAMS)
          src += srcRowStride;
       }
    }
+   else if (!ctx->_ImageTransferState &&
+            !srcPacking->SwapBytes &&
+            dstFormat->BaseFormat == GL_RGB && /* baseInternalFormat == GL_RGB && */
+            srcFormat == GL_RGBA &&
+            srcType == GL_UNSIGNED_BYTE &&
+            dims == 2) {
+      /* optimized RGBA8 -> RGB565 path (drop alpha, regardless of logical base) */
+      /*
+      fprintf(stderr, "  Taking optimized RGBA8->RGB565 path\n");
+      fflush(stderr);
+      */
+      const GLint srcRowStride = _mesa_image_row_stride(srcPacking, srcWidth,
+                                                        srcFormat, srcType);
+      const GLubyte *src = (const GLubyte *)
+         _mesa_image_address(dims, srcPacking, srcAddr, srcWidth, srcHeight,
+                             srcFormat, srcType, 0, 0, 0);
+      GLubyte *dst = (GLubyte *) dstAddr
+                   + dstYoffset * dstRowStride
+                   + dstXoffset * dstFormat->TexelBytes;
+      GLint row, col;
+      for (row = 0; row < srcHeight; row++) {
+         const GLubyte *srcUB = (const GLubyte *) src;
+         GLushort *dstUS = (GLushort *) dst;
+         /* check for byteswapped format */
+         if (dstFormat == &_mesa_texformat_rgb565) {
+            for (col = 0; col < srcWidth; col++) {
+               dstUS[col] = PACK_COLOR_565( srcUB[0], srcUB[1], srcUB[2] );
+               srcUB += 4; /* RGBA: skip alpha */
+            }
+         }
+         else {
+            for (col = 0; col < srcWidth; col++) {
+               dstUS[col] = PACK_COLOR_565_REV( srcUB[0], srcUB[1], srcUB[2] );
+               srcUB += 4; /* RGBA: skip alpha */
+            }
+         }
+         dst += dstRowStride;
+         src += srcRowStride;
+      }
+      /* 
+      fprintf(stderr, "  Optimized RGBA8->RGB565 path completed\n");
+      fflush(stderr); 
+      */
+   }
    else {
       /* general path */
       const GLchan *tempImage = _mesa_make_temp_chan_image(ctx, dims,
@@ -1918,6 +1962,38 @@ _mesa_texstore_rgba4444(TEXSTORE_PARAMS)
                      srcWidth, srcHeight, srcDepth, srcFormat, srcType,
                      srcAddr, srcPacking);
    }
+   else if (!ctx->_ImageTransferState &&
+            !srcPacking->SwapBytes &&
+            dstFormat == &_mesa_texformat_rgba4444 &&
+            srcFormat == GL_RGBA &&
+            srcType == GL_UNSIGNED_BYTE &&
+            dims == 2) {
+      /* optimized RGBA8 -> RGBA4444 path */
+      const GLint srcRowStride = _mesa_image_row_stride(srcPacking,
+                                                        srcWidth,
+                                                        srcFormat,
+                                                        srcType);
+      const GLubyte *src = (const GLubyte *)
+         _mesa_image_address(dims, srcPacking, srcAddr, srcWidth, srcHeight,
+                             srcFormat, srcType, 0, 0, 0);
+      GLubyte *dst = (GLubyte *) dstAddr
+                   + dstYoffset * dstRowStride
+                   + dstXoffset * dstFormat->TexelBytes;
+      GLint row, col;
+      for (row = 0; row < srcHeight; row++) {
+         const GLubyte *srcUB = src;
+         GLushort *dstUS = (GLushort *) dst;
+         for (col = 0; col < srcWidth; col++) {
+            dstUS[col] = PACK_COLOR_4444(srcUB[RCOMP],
+                                         srcUB[GCOMP],
+                                         srcUB[BCOMP],
+                                         srcUB[ACOMP]);
+            srcUB += 4;
+         }
+         dst += dstRowStride;
+         src += srcRowStride;
+      }
+   }
    else {
       /* general path */
       const GLchan *tempImage = _mesa_make_temp_chan_image(ctx, dims,
@@ -1973,6 +2049,38 @@ _mesa_texstore_argb4444(TEXSTORE_PARAMS)
                      dstImageOffsets,
                      srcWidth, srcHeight, srcDepth, srcFormat, srcType,
                      srcAddr, srcPacking);
+   }
+   else if (!ctx->_ImageTransferState &&
+            !srcPacking->SwapBytes &&
+            dstFormat == &_mesa_texformat_argb4444 &&
+            srcFormat == GL_RGBA &&
+            srcType == GL_UNSIGNED_BYTE &&
+            dims == 2) {
+      /* optimized RGBA8 -> ARGB4444 path (swizzle A,R,G,B) */
+      const GLint srcRowStride = _mesa_image_row_stride(srcPacking,
+                                                        srcWidth,
+                                                        srcFormat,
+                                                        srcType);
+      const GLubyte *src = (const GLubyte *)
+         _mesa_image_address(dims, srcPacking, srcAddr, srcWidth, srcHeight,
+                             srcFormat, srcType, 0, 0, 0);
+      GLubyte *dst = (GLubyte *) dstAddr
+                   + dstYoffset * dstRowStride
+                   + dstXoffset * dstFormat->TexelBytes;
+      GLint row, col;
+      for (row = 0; row < srcHeight; row++) {
+         const GLubyte *srcUB = src;
+         GLushort *dstUS = (GLushort *) dst;
+         for (col = 0; col < srcWidth; col++) {
+            dstUS[col] = PACK_COLOR_4444(srcUB[ACOMP],
+                                         srcUB[RCOMP],
+                                         srcUB[GCOMP],
+                                         srcUB[BCOMP]);
+            srcUB += 4;
+         }
+         dst += dstRowStride;
+         src += srcRowStride;
+      }
    }
    else {
       /* general path */
