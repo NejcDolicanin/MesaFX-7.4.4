@@ -707,7 +707,15 @@ _mesa_GenTextures( GLsizei n, GLuint *textures )
       struct gl_texture_object *texObj;
       GLuint name = first + i;
       GLenum target = 0;
-      texObj = (*ctx->Driver.NewTextureObject)( ctx, name, target);
+      
+      /* find a free ID */
+      name = _mesa_HashFindFreeKeyBlock(ctx->Shared->TexObjects, 1);
+
+      /* NEJC SOF FIX: delay reuse by bumping IDs into a higher range */
+      if (name > 0) {
+         name += 256;  /* safe margin before reuse */
+      }
+
       if (!texObj) {
          _glthread_UNLOCK_MUTEX(ctx->Shared->Mutex);
          _mesa_error(ctx, GL_OUT_OF_MEMORY, "glGenTextures");
