@@ -55,6 +55,7 @@ extern "C" {
 #include "glapi/glapi.h"
 #include "imports.h"
 #include "../../glide/fxdrv.h"
+#include "../../glide/fxutil.h"
 
 #define MAX_MESA_ATTRS  20
 
@@ -222,7 +223,30 @@ static int curPFD = 0;
 static HDC hDC;
 static HWND hWND;
 
-static GLboolean haveDualHead;
+/* Nejc: Debug logging */
+static FILE *debugLog = NULL;
+static void fxDebugLog(const char *format, ...)
+{
+   if (!debugLog)
+   {
+      debugLog = fopen("C:\\FXWGL_DEBUG.LOG", "a");
+      if (debugLog)
+      {
+         fprintf(debugLog, "=== New Session ===\n");
+         fflush(debugLog);
+      }
+   }
+
+   if (debugLog)
+   {
+      va_list args;
+      va_start(args, format);
+      vfprintf(debugLog, format, args);
+      va_end(args);
+      fflush(debugLog);
+   }
+}
+/* END DEBUG LOG */
 
 /* For the in-window-rendering hack */
 
@@ -331,6 +355,19 @@ wglCreateContext (HDC hdc)
       return NULL;
    }
 
+   /* Nejc: When forcing 16-bit, ensure curPFD is within valid range */
+   if (fxGetRegistryOrEnvironmentString("FX_MESA_FORCE_16BPP_PIX") != NULL)
+   {
+      int boardType = fxMesaSelectCurrentBoard(0);
+      if (boardType == GR_SSTTYPE_Voodoo5 || boardType == GR_SSTTYPE_Voodoo4)
+      {
+         if (curPFD > 2)
+         {
+            curPFD = 2; /* Force to 16-bit double buffer */
+         }
+      }
+   }
+
    if ((oldProc = (WNDPROC)GetWindowLong(hWnd, GWL_WNDPROC)) != __wglMonitor) {
       hWNDOldProc = oldProc;
       SetWindowLong(hWnd, GWL_WNDPROC, (LONG)__wglMonitor);
@@ -354,12 +391,6 @@ wglCreateContext (HDC hdc)
          error = !(ctx = fxMesaCreateBestContext((GLuint) hWnd, cliRect.right, cliRect.bottom, pix[curPFD - 1].mesaAttr));
       }
    }
-
-   /*if (getenv("SST_DUALHEAD"))
-      haveDualHead =
-         ((atoi(getenv("SST_DUALHEAD")) == 1) ? GL_TRUE : GL_FALSE);
-   else
-      haveDualHead = GL_FALSE;*/
 
    if (error) {
       SetLastError(0);
@@ -813,6 +844,16 @@ wglSwapLayerBuffers (HDC hdc, UINT fuPlanes)
 static int
 pfd_tablen (void)
 {
+   /* Nejc 16-bit override, limit to 2 pixelFormats 565 single buffer and 565 double buffer */
+   if (fxGetRegistryOrEnvironmentString("FX_MESA_FORCE_16BPP_PIX") != NULL)
+   {
+      int boardType = fxMesaSelectCurrentBoard(0);
+      if (boardType == GR_SSTTYPE_Voodoo5 || boardType == GR_SSTTYPE_Voodoo4)
+      {
+         return 2; /* Force only 16-bit entries for Voodoo4/5 */
+      }
+   }
+
    /* we should take an envvar for `fxMesaSelectCurrentBoard' */
    return (fxMesaSelectCurrentBoard(0) < GR_SSTTYPE_Voodoo4)
          ? 2                      /* only 16bit entries */
@@ -838,6 +879,14 @@ wglChoosePixelFormat (HDC hdc, const PIXELFORMATDESCRIPTOR *ppfd)
       pfd.cDepthBits = 24;
    } else if (pfd.cColorBits == 16) {
       pfd.cDepthBits = 16;
+   }
+
+   /* Nejc 16bit override */
+   if (fxGetRegistryOrEnvironmentString("FX_MESA_FORCE_16BPP_PIX") != NULL)
+   {
+      pfd.cDepthBits = 16;
+      pfd.cColorBits = 16;
+      // pfd.cStencilBits = 8;
    }
 #endif
 
@@ -939,6 +988,22 @@ wglDescribePixelFormat (HDC hdc, int iPixelFormat, UINT nBytes,
 
    qt_valid_pix = pfd_tablen();
 
+   /* Nejc: When forcing 16-bit, map out-of-range formats to 16-bit equivalents */
+   if (fxGetRegistryOrEnvironmentString("FX_MESA_FORCE_16BPP_PIX") != NULL)
+   {
+      int boardType = fxMesaSelectCurrentBoard(0);
+      if (boardType == GR_SSTTYPE_Voodoo5 || boardType == GR_SSTTYPE_Voodoo4)
+      {
+         if (iPixelFormat > qt_valid_pix)
+         {
+            /* Map high format numbers to 16-bit double buffer */
+            if (nBytes != 0)
+               *ppfd = pix[1].pfd; /* Format 2: 16-bit double buffer */
+            return qt_valid_pix;
+         }
+      }
+   }
+
    if (iPixelFormat < 1 || iPixelFormat > qt_valid_pix ||
        ((nBytes != sizeof(PIXELFORMATDESCRIPTOR)) && (nBytes != 0))) {
       SetLastError(0);
@@ -981,6 +1046,30 @@ wglSetPixelFormat (HDC hdc, int iPixelFormat, const PIXELFORMATDESCRIPTOR *ppfd)
    int qt_valid_pix;
 
    qt_valid_pix = pfd_tablen();
+
+   /* Nejc: When forcing 16-bit, accept any pixel format and map it to 16-bit */
+   if (fxGetRegistryOrEnvironmentString("FX_MESA_FORCE_16BPP_PIX") != NULL)
+   {
+      int boardType = fxMesaSelectCurrentBoard(0);
+      if (boardType == GR_SSTTYPE_Voodoo5 || boardType == GR_SSTTYPE_Voodoo4)
+      {
+         /* Force to 16-bit format based on double buffer flag */
+         if (ppfd && (ppfd->dwFlags & PFD_DOUBLEBUFFER))
+         {
+            curPFD = 2; /* 16-bit RGB565 double buffer */
+         }
+         else if (iPixelFormat == 2 || (ppfd == NULL && iPixelFormat > 2))
+         {
+            /* If format 2 requested or high format without ppfd, assume double buffer */
+            curPFD = 2;
+         }
+         else
+         {
+            curPFD = 1; /* 16-bit RGB565 single buffer */
+         }
+         return TRUE;
+      }
+   }
 
    if (iPixelFormat < 1 || iPixelFormat > qt_valid_pix) {
       if (ppfd == NULL) {
@@ -1267,6 +1356,38 @@ GLAPI int GLAPIENTRY
 DrvDescribePixelFormat (HDC hdc, int iPixelFormat, UINT nBytes,
                         LPPIXELFORMATDESCRIPTOR ppfd)
 {
+   int qt_valid_pix;
+   int reported_formats;
+
+   qt_valid_pix = pfd_tablen();
+
+   /* Nejc: When forcing 16-bit via ICD, report all 6 formats with proper descriptors */
+   if (fxGetRegistryOrEnvironmentString("FX_MESA_FORCE_16BPP_PIX") != NULL)
+   {
+      int boardType = fxMesaSelectCurrentBoard(0);
+      if (boardType == GR_SSTTYPE_Voodoo5 || boardType == GR_SSTTYPE_Voodoo4)
+      {
+         reported_formats = 6; /* Report all formats available */
+
+         if (iPixelFormat > qt_valid_pix && iPixelFormat <= 6)
+         {
+            /* Return the REAL descriptor for the format so system doesn't reject us */
+            if (ppfd && nBytes == sizeof(PIXELFORMATDESCRIPTOR))
+            {
+               *ppfd = pix[iPixelFormat - 1].pfd; /* Return actual 32-bit descriptor */
+            }
+            return reported_formats;
+         }
+
+         /* For formats 1-2, return normally but report 6 total */
+         if (ppfd && nBytes == sizeof(PIXELFORMATDESCRIPTOR))
+         {
+            *ppfd = pix[iPixelFormat - 1].pfd;
+         }
+         return reported_formats;
+      }
+   }
+
    return wglDescribePixelFormat(hdc, iPixelFormat, nBytes, ppfd);
 }
 
@@ -1281,6 +1402,24 @@ DrvGetProcAddress (LPCSTR lpszProc)
 GLAPI BOOL GLAPIENTRY
 DrvSetPixelFormat (HDC hdc, int iPixelFormat)
 {
+   int qt_valid_pix;
+   qt_valid_pix = pfd_tablen();
+
+   /* Nejc: When forcing 16-bit via ICD, accept any pixel format and map to 16-bit */
+   if (fxGetRegistryOrEnvironmentString("FX_MESA_FORCE_16BPP_PIX") != NULL)
+   {
+      int boardType = fxMesaSelectCurrentBoard(0);
+
+      if (boardType == GR_SSTTYPE_Voodoo5 || boardType == GR_SSTTYPE_Voodoo4)
+      {
+         /* If out of range, map to format 2 (16-bit double buffer) */
+         if (iPixelFormat > qt_valid_pix)
+         {
+            return wglSetPixelFormat(hdc, 2, NULL);
+         }
+      }
+   }
+
    return wglSetPixelFormat(hdc, iPixelFormat, NULL);
 }
 
