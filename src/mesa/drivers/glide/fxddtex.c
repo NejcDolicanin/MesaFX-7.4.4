@@ -231,6 +231,11 @@ fxAllocTexObjData(fxMesaContext fxMesa)
    ti->mmMode = GR_MIPMAP_NEAREST;
    ti->LODblend = FXFALSE;
 
+   /* Initialie scale factors to safe defaults for bind-before-gen case*/
+   /* 256.0F is a safe identity default, It maps a 1.0 OpenGL coordinate to a full Glide texture span, prevents division with 0 */
+   ti->tScale = 256.0F;
+   ti->sScale = 256.0F;
+
    return ti;
 }
 
