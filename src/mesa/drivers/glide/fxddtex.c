@@ -62,12 +62,12 @@ _mesa_halve2x2_teximage2d ( GLcontext *ctx,
    GLint srcRowStride = srcWidth * bytesPerPixel;
    GLubyte *src = (GLubyte *)srcImage;
    GLubyte *dst = dstImage;
-   GLuint dstImageOffsets = 0;
 
    GLuint bpt = 0;
    GLubyte *_s = NULL;
    GLubyte *_d = NULL;
    GLenum _t = 0;
+   GLuint dstImageOffsets = 0;
 
    if (texImage->TexFormat->MesaFormat == MESA_FORMAT_RGB565) {
       _t = GL_UNSIGNED_SHORT_5_6_5_REV;
@@ -1462,7 +1462,7 @@ fxDDTexImage2D(GLcontext * ctx, GLenum target, GLint level,
                                          texImage->TexFormat, texImage->Data,
                                          0, 0, 0, /* dstX/Y/Zoffset */
                                          dstRowStride,
-                                         0, /* dstImageStride */
+                                         texImage->ImageOffsets, /* dstImageOffsets */
                                          width, height, 1,
                                          format, type, pixels, packing);
       }
