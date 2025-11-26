@@ -51,6 +51,9 @@ typedef void (APIENTRY *LPDGLSPLASHSCREEN)(int, int, char*);
 #include "gld_driver.h"
 #endif
 
+/* Nejc Extern from fxwgl.c – used to disable ICD calls during unload */
+extern BOOL icdActive;
+
 // ***********************************************************************
 
 BOOL bInitialized = FALSE;              // callback driver initialized?
@@ -580,6 +583,9 @@ BOOL dglInitDriver(void)
 		// (Re-)Init defaults
 		dglInitGlobals();
 
+		// Mark ICD active (used by fxwgl.c)
+        icdActive = TRUE;
+
 		// Read registry or INI file settings
 		if (!dllReadRegistry(hInstanceDll)) {
             if (!bWarnOnce)
@@ -705,10 +711,16 @@ int WINAPI DllMain(
 		// Init defaults
 		dglInitGlobals();
 
+		// Mark ICD active (used by fxwgl.c)
+        icdActive = TRUE;
+
         // Defer rest of DLL initialization to 1st WGL function call
 		break;
 
 	case DLL_PROCESS_DETACH:
+		// Mark ICD inactive before cleanup
+        icdActive = FALSE;
+		
 		// Call exit clean-up sequence
 		dglExitDriver();
 		break;

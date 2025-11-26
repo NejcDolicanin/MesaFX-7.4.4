@@ -14,6 +14,16 @@
 #include "state.h"
 #include "texcompress.h"
 
+/* For GL_SGIS_multitexture */
+#ifndef GL_SELECTED_TEXTURE_SGIS
+#define GL_SELECTED_TEXTURE_SGIS 0x835C
+#endif
+#ifndef GL_SELECTED_TEXTURE_COORD_SET_SGIS
+#define GL_SELECTED_TEXTURE_COORD_SET_SGIS 0x835D
+#endif
+#ifndef GL_TEXTURE0_SGIS
+#define GL_TEXTURE0_SGIS 0x835E
+#endif
 
 #define FLOAT_TO_BOOLEAN(X)   ( (X) ? GL_TRUE : GL_FALSE )
 

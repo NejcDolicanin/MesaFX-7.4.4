@@ -162,6 +162,7 @@ static const struct {
    { OFF, "GL_SGI_color_table",                F(SGI_color_table) },
    { OFF, "GL_SGI_texture_color_table",        F(SGI_texture_color_table) },
    { OFF, "GL_SGIS_generate_mipmap",           F(SGIS_generate_mipmap) },
+   { OFF, "GL_SGIS_multitexture",              F(SGIS_multitexture) },
    { OFF, "GL_SGIS_texture_border_clamp",      F(ARB_texture_border_clamp) },
    { ON,  "GL_SGIS_texture_edge_clamp",        F(SGIS_texture_edge_clamp) },
    { ON,  "GL_SGIS_texture_lod",               F(SGIS_texture_lod) },

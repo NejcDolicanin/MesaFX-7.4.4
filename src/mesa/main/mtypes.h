@@ -2641,6 +2641,7 @@ struct gl_extensions
    GLboolean SGI_color_table;
    GLboolean SGI_texture_color_table;
    GLboolean SGIS_generate_mipmap;
+   GLboolean SGIS_multitexture;
    GLboolean SGIS_texture_edge_clamp;
    GLboolean SGIS_texture_lod;
    GLboolean SGIX_shadow;

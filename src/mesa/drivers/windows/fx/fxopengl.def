@@ -896,6 +896,52 @@ EXPORTS
  glWindowPos4ivMESA
  glWindowPos4sMESA
  glWindowPos4svMESA
+
+; SGIS_multitexture compatibility wrappers (forward to ARB)
+ glSelectTextureSGIS
+ glSelectTextureCoordSetSGIS
+ glSelectTextureTransformSGIS
+ 
+ ; float + float* variants
+ glMultiTexCoord1fSGIS
+ glMultiTexCoord1fvSGIS
+ glMultiTexCoord2fSGIS
+ glMultiTexCoord2fvSGIS
+ glMultiTexCoord3fSGIS
+ glMultiTexCoord3fvSGIS
+ glMultiTexCoord4fSGIS
+ glMultiTexCoord4fvSGIS
+ 
+ ; double + double* variants
+ glMultiTexCoord1dSGIS
+ glMultiTexCoord1dvSGIS
+ glMultiTexCoord2dSGIS
+ glMultiTexCoord2dvSGIS
+ glMultiTexCoord3dSGIS
+ glMultiTexCoord3dvSGIS
+ glMultiTexCoord4dSGIS
+ glMultiTexCoord4dvSGIS
+ 
+ ; int + int* variants
+ glMultiTexCoord1iSGIS
+ glMultiTexCoord1ivSGIS
+ glMultiTexCoord2iSGIS
+ glMultiTexCoord2ivSGIS
+ glMultiTexCoord3iSGIS
+ glMultiTexCoord3ivSGIS
+ glMultiTexCoord4iSGIS
+ glMultiTexCoord4ivSGIS
+ 
+ ; short + short* variants
+ glMultiTexCoord1sSGIS
+ glMultiTexCoord1svSGIS
+ glMultiTexCoord2sSGIS
+ glMultiTexCoord2svSGIS
+ glMultiTexCoord3sSGIS
+ glMultiTexCoord3svSGIS
+ glMultiTexCoord4sSGIS
+ glMultiTexCoord4svSGIS
+
  fxCloseHardware
 ;fxGetScreenGeometry
  fxMesaCreateBestContext

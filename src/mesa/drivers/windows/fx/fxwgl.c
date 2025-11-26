@@ -57,6 +57,50 @@ extern "C" {
 #include "../../glide/fxdrv.h"
 #include "../../glide/fxutil.h"
 
+/* Nejc Extern from fxwgl.c – used to disable ICD calls during unload */   
+BOOL icdActive = TRUE;
+
+/* SGIS_multitexture compatibility wrappers defined in core (texstate.c) */
+extern void GLAPIENTRY glSelectTextureSGIS(GLenum target);
+extern void GLAPIENTRY glSelectTextureCoordSetSGIS(GLenum target);
+extern void GLAPIENTRY glSelectTextureTransformSGIS(GLenum target);
+
+extern void GLAPIENTRY glMultiTexCoord1fSGIS(GLenum target, GLfloat s);
+extern void GLAPIENTRY glMultiTexCoord1fvSGIS(GLenum target, const GLfloat *v);
+extern void GLAPIENTRY glMultiTexCoord2fSGIS(GLenum target, GLfloat s, GLfloat t);
+extern void GLAPIENTRY glMultiTexCoord2fvSGIS(GLenum target, const GLfloat *v);
+extern void GLAPIENTRY glMultiTexCoord3fSGIS(GLenum target, GLfloat s, GLfloat t, GLfloat r);
+extern void GLAPIENTRY glMultiTexCoord3fvSGIS(GLenum target, const GLfloat *v);
+extern void GLAPIENTRY glMultiTexCoord4fSGIS(GLenum target, GLfloat s, GLfloat t, GLfloat r, GLfloat q);
+extern void GLAPIENTRY glMultiTexCoord4fvSGIS(GLenum target, const GLfloat *v);
+
+extern void GLAPIENTRY glMultiTexCoord1dSGIS(GLenum target, GLdouble s);
+extern void GLAPIENTRY glMultiTexCoord1dvSGIS(GLenum target, const GLdouble *v);
+extern void GLAPIENTRY glMultiTexCoord2dSGIS(GLenum target, GLdouble s, GLdouble t);
+extern void GLAPIENTRY glMultiTexCoord2dvSGIS(GLenum target, const GLdouble *v);
+extern void GLAPIENTRY glMultiTexCoord3dSGIS(GLenum target, GLdouble s, GLdouble t, GLdouble r);
+extern void GLAPIENTRY glMultiTexCoord3dvSGIS(GLenum target, const GLdouble *v);
+extern void GLAPIENTRY glMultiTexCoord4dSGIS(GLenum target, GLdouble s, GLdouble t, GLdouble r, GLdouble q);
+extern void GLAPIENTRY glMultiTexCoord4dvSGIS(GLenum target, const GLdouble *v);
+
+extern void GLAPIENTRY glMultiTexCoord1iSGIS(GLenum target, GLint s);
+extern void GLAPIENTRY glMultiTexCoord1ivSGIS(GLenum target, const GLint *v);
+extern void GLAPIENTRY glMultiTexCoord2iSGIS(GLenum target, GLint s, GLint t);
+extern void GLAPIENTRY glMultiTexCoord2ivSGIS(GLenum target, const GLint *v);
+extern void GLAPIENTRY glMultiTexCoord3iSGIS(GLenum target, GLint s, GLint t, GLint r);
+extern void GLAPIENTRY glMultiTexCoord3ivSGIS(GLenum target, const GLint *v);
+extern void GLAPIENTRY glMultiTexCoord4iSGIS(GLenum target, GLint s, GLint t, GLint r, GLint q);
+extern void GLAPIENTRY glMultiTexCoord4ivSGIS(GLenum target, const GLint *v);
+
+extern void GLAPIENTRY glMultiTexCoord1sSGIS(GLenum target, GLshort s);
+extern void GLAPIENTRY glMultiTexCoord1svSGIS(GLenum target, const GLshort *v);
+extern void GLAPIENTRY glMultiTexCoord2sSGIS(GLenum target, GLshort s, GLshort t);
+extern void GLAPIENTRY glMultiTexCoord2svSGIS(GLenum target, const GLshort *v);
+extern void GLAPIENTRY glMultiTexCoord3sSGIS(GLenum target, GLshort s, GLshort t, GLshort r);
+extern void GLAPIENTRY glMultiTexCoord3svSGIS(GLenum target, const GLshort *v);
+extern void GLAPIENTRY glMultiTexCoord4sSGIS(GLenum target, GLshort s, GLshort t, GLshort r, GLshort q);
+extern void GLAPIENTRY glMultiTexCoord4svSGIS(GLenum target, const GLshort *v);
+
 #define MAX_MESA_ATTRS  20
 
 #if (_MSC_VER >= 1200)
@@ -657,6 +701,202 @@ GLAPI PROC GLAPIENTRY
 wglGetProcAddress (LPCSTR lpszProc)
 {
    int i;
+   static int arbChecked = 0;
+   static BOOL haveARBMultitexture = FALSE;
+
+/* Check if ICD is still active (avoid calls during shutdown) */
+   if (!icdActive)
+   {
+      SetLastError(0);
+      return NULL;
+   }
+
+   /* Sanity check for input */
+   if (!lpszProc || !*lpszProc)
+   {
+      SetLastError(ERROR_INVALID_PARAMETER);
+      return NULL;
+   }
+
+   /* Lazy probe once for ARB_multitexture availability */
+   if (!arbChecked)
+   {
+      arbChecked = 1;
+      haveARBMultitexture =
+          (_glapi_get_proc_address("glActiveTextureARB") != NULL) &&
+          (_glapi_get_proc_address("glClientActiveTextureARB") != NULL) &&
+          (_glapi_get_proc_address("glMultiTexCoord2fARB") != NULL);
+   }
+
+   /* Handle SGIS multitexture names FIRST to force wrappers to ARB */
+   if (lpszProc)
+   {
+      /* Prevent returning wrappers if ARB multitexture is not available */
+      if (!haveARBMultitexture)
+      {
+         SetLastError(0);
+         return NULL;
+      }
+
+      /* Prevent returning wrappers if Mesa context was already destroyed */
+      if (!ctx)
+      {
+         SetLastError(0);
+         return NULL;
+      }
+
+      /* SelectTexture* aliases */
+      if (!strcmp(lpszProc, "glSelectTextureSGIS"))
+      {
+         return (PROC)glSelectTextureSGIS;
+      }
+      if (!strcmp(lpszProc, "glSelectTextureCoordSetSGIS"))
+      {
+         return (PROC)glSelectTextureCoordSetSGIS;
+      }
+      if (!strcmp(lpszProc, "glSelectTextureTransformSGIS"))
+      {
+         return (PROC)glSelectTextureTransformSGIS;
+      }
+
+      /* SGIS multitexture coordinate aliases (long and short forms) */
+      /* float */
+      if (!strcmp(lpszProc, "glMultiTexCoord1fSGIS") || !strcmp(lpszProc, "glMTexCoord1fSGIS"))
+      {
+         return (PROC)glMultiTexCoord1fSGIS;
+      }
+      if (!strcmp(lpszProc, "glMultiTexCoord1fvSGIS") || !strcmp(lpszProc, "glMTexCoord1fvSGIS"))
+      {
+         return (PROC)glMultiTexCoord1fvSGIS;
+      }
+      if (!strcmp(lpszProc, "glMultiTexCoord2fSGIS") || !strcmp(lpszProc, "glMTexCoord2fSGIS"))
+      {
+         return (PROC)glMultiTexCoord2fSGIS;
+      }
+      if (!strcmp(lpszProc, "glMultiTexCoord2fvSGIS") || !strcmp(lpszProc, "glMTexCoord2fvSGIS"))
+      {
+         return (PROC)glMultiTexCoord2fvSGIS;
+      }
+      if (!strcmp(lpszProc, "glMultiTexCoord3fSGIS") || !strcmp(lpszProc, "glMTexCoord3fSGIS"))
+      {
+         return (PROC)glMultiTexCoord3fSGIS;
+      }
+      if (!strcmp(lpszProc, "glMultiTexCoord3fvSGIS") || !strcmp(lpszProc, "glMTexCoord3fvSGIS"))
+      {
+         return (PROC)glMultiTexCoord3fvSGIS;
+      }
+      if (!strcmp(lpszProc, "glMultiTexCoord4fSGIS") || !strcmp(lpszProc, "glMTexCoord4fSGIS"))
+      {
+         return (PROC)glMultiTexCoord4fSGIS;
+      }
+      if (!strcmp(lpszProc, "glMultiTexCoord4fvSGIS") || !strcmp(lpszProc, "glMTexCoord4fvSGIS"))
+      {
+         return (PROC)glMultiTexCoord4fvSGIS;
+      }
+
+      /* double */
+      if (!strcmp(lpszProc, "glMultiTexCoord1dSGIS") || !strcmp(lpszProc, "glMTexCoord1dSGIS"))
+      {
+         return (PROC)glMultiTexCoord1dSGIS;
+      }
+      if (!strcmp(lpszProc, "glMultiTexCoord1dvSGIS") || !strcmp(lpszProc, "glMTexCoord1dvSGIS"))
+      {
+         return (PROC)glMultiTexCoord1dvSGIS;
+      }
+      if (!strcmp(lpszProc, "glMultiTexCoord2dSGIS") || !strcmp(lpszProc, "glMTexCoord2dSGIS"))
+      {
+         return (PROC)glMultiTexCoord2dSGIS;
+      }
+      if (!strcmp(lpszProc, "glMultiTexCoord2dvSGIS") || !strcmp(lpszProc, "glMTexCoord2dvSGIS"))
+      {
+         return (PROC)glMultiTexCoord2dvSGIS;
+      }
+      if (!strcmp(lpszProc, "glMultiTexCoord3dSGIS") || !strcmp(lpszProc, "glMTexCoord3dSGIS"))
+      {
+         return (PROC)glMultiTexCoord3dSGIS;
+      }
+      if (!strcmp(lpszProc, "glMultiTexCoord3dvSGIS") || !strcmp(lpszProc, "glMTexCoord3dvSGIS"))
+      {
+         return (PROC)glMultiTexCoord3dvSGIS;
+      }
+      if (!strcmp(lpszProc, "glMultiTexCoord4dSGIS") || !strcmp(lpszProc, "glMTexCoord4dSGIS"))
+      {
+         return (PROC)glMultiTexCoord4dSGIS;
+      }
+      if (!strcmp(lpszProc, "glMultiTexCoord4dvSGIS") || !strcmp(lpszProc, "glMTexCoord4dvSGIS"))
+      {
+         return (PROC)glMultiTexCoord4dvSGIS;
+      }
+
+      /* int */
+      if (!strcmp(lpszProc, "glMultiTexCoord1iSGIS") || !strcmp(lpszProc, "glMTexCoord1iSGIS"))
+      {
+         return (PROC)glMultiTexCoord1iSGIS;
+      }
+      if (!strcmp(lpszProc, "glMultiTexCoord1ivSGIS") || !strcmp(lpszProc, "glMTexCoord1ivSGIS"))
+      {
+         return (PROC)glMultiTexCoord1ivSGIS;
+      }
+      if (!strcmp(lpszProc, "glMultiTexCoord2iSGIS") || !strcmp(lpszProc, "glMTexCoord2iSGIS"))
+      {
+         return (PROC)glMultiTexCoord2iSGIS;
+      }
+      if (!strcmp(lpszProc, "glMultiTexCoord2ivSGIS") || !strcmp(lpszProc, "glMTexCoord2ivSGIS"))
+      {
+         return (PROC)glMultiTexCoord2ivSGIS;
+      }
+      if (!strcmp(lpszProc, "glMultiTexCoord3iSGIS") || !strcmp(lpszProc, "glMTexCoord3iSGIS"))
+      {
+         return (PROC)glMultiTexCoord3iSGIS;
+      }
+      if (!strcmp(lpszProc, "glMultiTexCoord3ivSGIS") || !strcmp(lpszProc, "glMTexCoord3ivSGIS"))
+      {
+         return (PROC)glMultiTexCoord3ivSGIS;
+      }
+      if (!strcmp(lpszProc, "glMultiTexCoord4iSGIS") || !strcmp(lpszProc, "glMTexCoord4iSGIS"))
+      {
+         return (PROC)glMultiTexCoord4iSGIS;
+      }
+      if (!strcmp(lpszProc, "glMultiTexCoord4ivSGIS") || !strcmp(lpszProc, "glMTexCoord4ivSGIS"))
+      {
+         return (PROC)glMultiTexCoord4ivSGIS;
+      }
+
+      /* short */
+      if (!strcmp(lpszProc, "glMultiTexCoord1sSGIS") || !strcmp(lpszProc, "glMTexCoord1sSGIS"))
+      {
+         return (PROC)glMultiTexCoord1sSGIS;
+      }
+      if (!strcmp(lpszProc, "glMultiTexCoord1svSGIS") || !strcmp(lpszProc, "glMTexCoord1svSGIS"))
+      {
+         return (PROC)glMultiTexCoord1svSGIS;
+      }
+      if (!strcmp(lpszProc, "glMultiTexCoord2sSGIS") || !strcmp(lpszProc, "glMTexCoord2sSGIS"))
+      {
+         return (PROC)glMultiTexCoord2sSGIS;
+      }
+      if (!strcmp(lpszProc, "glMultiTexCoord2svSGIS") || !strcmp(lpszProc, "glMTexCoord2svSGIS"))
+      {
+         return (PROC)glMultiTexCoord2svSGIS;
+      }
+      if (!strcmp(lpszProc, "glMultiTexCoord3sSGIS") || !strcmp(lpszProc, "glMTexCoord3sSGIS"))
+      {
+         return (PROC)glMultiTexCoord3sSGIS;
+      }
+      if (!strcmp(lpszProc, "glMultiTexCoord3svSGIS") || !strcmp(lpszProc, "glMTexCoord3svSGIS"))
+      {
+         return (PROC)glMultiTexCoord3svSGIS;
+      }
+      if (!strcmp(lpszProc, "glMultiTexCoord4sSGIS") || !strcmp(lpszProc, "glMTexCoord4sSGIS"))
+      {
+         return (PROC)glMultiTexCoord4sSGIS;
+      }
+      if (!strcmp(lpszProc, "glMultiTexCoord4svSGIS") || !strcmp(lpszProc, "glMTexCoord4svSGIS"))
+      {
+         return (PROC)glMultiTexCoord4svSGIS;
+      }
+   }
+   
    PROC p = (PROC)_glapi_get_proc_address((const char *)lpszProc);
 
    /* we can't BlendColor. work around buggy applications */

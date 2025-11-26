@@ -1856,6 +1856,7 @@ fxDDInitExtensions(GLcontext * ctx)
 
    if (fxMesa->haveTwoTMUs) {
       _mesa_enable_extension(ctx, "GL_ARB_multitexture");
+      _mesa_enable_extension(ctx, "GL_SGIS_multitexture");  /* GL_SGIS_multi will just wrap to GL_ARB_multitexture */
    }
 
    if (fxMesa->type >= GR_SSTTYPE_Voodoo4) {

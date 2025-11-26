@@ -336,7 +336,273 @@ _mesa_ClientActiveTextureARB(GLenum texture)
    ctx->Array.ActiveTexture = texUnit;
 }
 
+/* --- SGIS_multitexture compatibility wrappers forwarding to ARB --- */
+#ifndef GL_TEXTURE0_SGIS
+#define GL_TEXTURE0_SGIS 0x835E
+#endif
 
+/* --- safety: bail out cleanly if the GL context is gone --- */
+#ifndef SGIS_GUARD_CTX
+#define SGIS_GUARD_CTX()           \
+   do {                            \
+      GET_CURRENT_CONTEXT(ctx);    \
+      if (!ctx) return;            \
+   } while (0)
+#endif
+
+static GLenum convert_sgis_target_to_arb(GLenum target)
+{
+   /* SGIS defines GL_TEXTURE0_SGIS..GL_TEXTURE3_SGIS (4 units).
+    * Clamp to the last valid ARB unit if app selects beyond hardware limit.
+    * This avoids invalid enums and potential OOB/state desync in legacy apps.
+    */
+   if (target >= GL_TEXTURE0_SGIS && target < GL_TEXTURE0_SGIS + 4) {
+      GET_CURRENT_CONTEXT(ctx);
+      GLuint unit = (GLuint)(target - GL_TEXTURE0_SGIS);
+      GLuint outUnit = unit;
+      /* clamp only if we actually have a context */
+      if (ctx && unit >= ctx->Const.MaxTextureUnits) {
+         outUnit = (ctx->Const.MaxTextureUnits > 0) ? (ctx->Const.MaxTextureUnits - 1) : 0;
+      }
+      return GL_TEXTURE0_ARB + outUnit;
+   }
+   /* Not an SGIS multitexture enum; pass through unchanged. */
+   return target;
+}
+
+void GLAPIENTRY glSelectTextureSGIS(GLenum target)
+{
+   SGIS_GUARD_CTX();
+   GLenum t = convert_sgis_target_to_arb(target);
+   glActiveTextureARB(t);
+}
+
+void GLAPIENTRY glSelectTextureCoordSetSGIS(GLenum target)
+{
+   SGIS_GUARD_CTX();
+   GLenum t = convert_sgis_target_to_arb(target);
+
+   /* Keep client arrays and immediate-mode texcoord target in sync.
+    * Some SGIS-era apps set coord set independently of 'texture',
+    * but Mesa's glTexCoord* follows ActiveTexture. Mapping both here
+    * avoids mismatched coord/bind state that can lead to crashes.
+    */
+   glActiveTextureARB(t);
+   glClientActiveTextureARB(t);
+}
+
+void GLAPIENTRY glSelectTextureTransformSGIS(GLenum target)
+{
+   SGIS_GUARD_CTX();
+   GLenum t = convert_sgis_target_to_arb(target);
+   glActiveTextureARB(t);
+}
+
+/* Float and float-vector variants, 1..4 components */
+void GLAPIENTRY glMultiTexCoord1fSGIS(GLenum target, GLfloat s)
+{
+   SGIS_GUARD_CTX();
+   GLenum t = convert_sgis_target_to_arb(target);
+   glMultiTexCoord1fARB(t, s);
+}
+
+void GLAPIENTRY glMultiTexCoord1fvSGIS(GLenum target, const GLfloat *v)
+{
+   SGIS_GUARD_CTX();
+   glMultiTexCoord1fvARB(convert_sgis_target_to_arb(target), v);
+}
+
+void GLAPIENTRY glMultiTexCoord2fSGIS(GLenum target, GLfloat s, GLfloat t)
+{
+   SGIS_GUARD_CTX();
+   GLenum ta = convert_sgis_target_to_arb(target);
+   glMultiTexCoord2fARB(ta, s, t);
+}
+
+void GLAPIENTRY glMultiTexCoord2fvSGIS(GLenum target, const GLfloat *v)
+{
+   SGIS_GUARD_CTX();
+   glMultiTexCoord2fvARB(convert_sgis_target_to_arb(target), v);
+}
+
+void GLAPIENTRY glMultiTexCoord3fSGIS(GLenum target, GLfloat s, GLfloat t, GLfloat r)
+{
+   SGIS_GUARD_CTX();
+   GLenum ta = convert_sgis_target_to_arb(target);
+   glMultiTexCoord3fARB(ta, s, t, r);
+}
+
+void GLAPIENTRY glMultiTexCoord3fvSGIS(GLenum target, const GLfloat *v)
+{
+   SGIS_GUARD_CTX();
+   glMultiTexCoord3fvARB(convert_sgis_target_to_arb(target), v);
+}
+
+void GLAPIENTRY glMultiTexCoord4fSGIS(GLenum target, GLfloat s, GLfloat t, GLfloat r, GLfloat q)
+{
+   SGIS_GUARD_CTX();
+   GLenum ta = convert_sgis_target_to_arb(target);
+   glMultiTexCoord4fARB(ta, s, t, r, q);
+}
+
+void GLAPIENTRY glMultiTexCoord4fvSGIS(GLenum target, const GLfloat *v)
+{
+   SGIS_GUARD_CTX();
+   glMultiTexCoord4fvARB(convert_sgis_target_to_arb(target), v);
+}
+
+/* Double-precision variants */
+void GLAPIENTRY glMultiTexCoord1dSGIS(GLenum target, GLdouble s)
+{
+   SGIS_GUARD_CTX();
+   GLenum ta = convert_sgis_target_to_arb(target);
+   glMultiTexCoord1dARB(ta, s);
+}
+
+void GLAPIENTRY glMultiTexCoord1dvSGIS(GLenum target, const GLdouble *v)
+{
+   SGIS_GUARD_CTX();
+   glMultiTexCoord1dvARB(convert_sgis_target_to_arb(target), v);
+}
+
+void GLAPIENTRY glMultiTexCoord2dSGIS(GLenum target, GLdouble s, GLdouble t)
+{
+   SGIS_GUARD_CTX();
+   GLenum ta = convert_sgis_target_to_arb(target);
+   glMultiTexCoord2dARB(ta, s, t);
+}
+
+void GLAPIENTRY glMultiTexCoord2dvSGIS(GLenum target, const GLdouble *v)
+{
+   SGIS_GUARD_CTX();
+   glMultiTexCoord2dvARB(convert_sgis_target_to_arb(target), v);
+}
+
+void GLAPIENTRY glMultiTexCoord3dSGIS(GLenum target, GLdouble s, GLdouble t, GLdouble r)
+{
+   SGIS_GUARD_CTX();
+   GLenum ta = convert_sgis_target_to_arb(target);
+   glMultiTexCoord3dARB(ta, s, t, r);
+}
+
+void GLAPIENTRY glMultiTexCoord3dvSGIS(GLenum target, const GLdouble *v)
+{
+   SGIS_GUARD_CTX();
+   glMultiTexCoord3dvARB(convert_sgis_target_to_arb(target), v);
+}
+
+void GLAPIENTRY glMultiTexCoord4dSGIS(GLenum target, GLdouble s, GLdouble t, GLdouble r, GLdouble q)
+{
+   SGIS_GUARD_CTX();
+   GLenum ta = convert_sgis_target_to_arb(target);
+   glMultiTexCoord4dARB(ta, s, t, r, q);
+}
+
+void GLAPIENTRY glMultiTexCoord4dvSGIS(GLenum target, const GLdouble *v)
+{
+   SGIS_GUARD_CTX();
+   glMultiTexCoord4dvARB(convert_sgis_target_to_arb(target), v);
+}
+
+/* Integer variants */
+void GLAPIENTRY glMultiTexCoord1iSGIS(GLenum target, GLint s)
+{
+   SGIS_GUARD_CTX();
+   glMultiTexCoord1iARB(convert_sgis_target_to_arb(target), s);
+}
+
+void GLAPIENTRY glMultiTexCoord1ivSGIS(GLenum target, const GLint *v)
+{
+   SGIS_GUARD_CTX();
+   glMultiTexCoord1ivARB(convert_sgis_target_to_arb(target), v);
+}
+
+void GLAPIENTRY glMultiTexCoord2iSGIS(GLenum target, GLint s, GLint t)
+{
+   SGIS_GUARD_CTX();
+   GLenum ta = convert_sgis_target_to_arb(target);
+   glMultiTexCoord2iARB(ta, s, t);
+}
+
+void GLAPIENTRY glMultiTexCoord2ivSGIS(GLenum target, const GLint *v)
+{
+   SGIS_GUARD_CTX();
+   glMultiTexCoord2ivARB(convert_sgis_target_to_arb(target), v);
+}
+
+void GLAPIENTRY glMultiTexCoord3iSGIS(GLenum target, GLint s, GLint t, GLint r)
+{
+   SGIS_GUARD_CTX();
+   glMultiTexCoord3iARB(convert_sgis_target_to_arb(target), s, t, r);
+}
+
+void GLAPIENTRY glMultiTexCoord3ivSGIS(GLenum target, const GLint *v)
+{
+   SGIS_GUARD_CTX();
+   glMultiTexCoord3ivARB(convert_sgis_target_to_arb(target), v);
+}
+
+void GLAPIENTRY glMultiTexCoord4iSGIS(GLenum target, GLint s, GLint t, GLint r, GLint q)
+{
+   SGIS_GUARD_CTX();
+   glMultiTexCoord4iARB(convert_sgis_target_to_arb(target), s, t, r, q);
+}
+
+void GLAPIENTRY glMultiTexCoord4ivSGIS(GLenum target, const GLint *v)
+{
+   SGIS_GUARD_CTX();
+   glMultiTexCoord4ivARB(convert_sgis_target_to_arb(target), v);
+}
+
+/* Short variants */
+void GLAPIENTRY glMultiTexCoord1sSGIS(GLenum target, GLshort s)
+{
+   SGIS_GUARD_CTX();
+   glMultiTexCoord1sARB(convert_sgis_target_to_arb(target), s);
+}
+
+void GLAPIENTRY glMultiTexCoord1svSGIS(GLenum target, const GLshort *v)
+{
+   SGIS_GUARD_CTX();
+   glMultiTexCoord1svARB(convert_sgis_target_to_arb(target), v);
+}
+
+void GLAPIENTRY glMultiTexCoord2sSGIS(GLenum target, GLshort s, GLshort t)
+{
+   SGIS_GUARD_CTX();
+   GLenum ta = convert_sgis_target_to_arb(target);
+   glMultiTexCoord2sARB(ta, s, t);
+}
+
+void GLAPIENTRY glMultiTexCoord2svSGIS(GLenum target, const GLshort *v)
+{
+   SGIS_GUARD_CTX();
+   glMultiTexCoord2svARB(convert_sgis_target_to_arb(target), v);
+}
+
+void GLAPIENTRY glMultiTexCoord3sSGIS(GLenum target, GLshort s, GLshort t, GLshort r)
+{
+   SGIS_GUARD_CTX();
+   glMultiTexCoord3sARB(convert_sgis_target_to_arb(target), s, t, r);
+}
+
+void GLAPIENTRY glMultiTexCoord3svSGIS(GLenum target, const GLshort *v)
+{
+   SGIS_GUARD_CTX();
+   glMultiTexCoord3svARB(convert_sgis_target_to_arb(target), v);
+}
+
+void GLAPIENTRY glMultiTexCoord4sSGIS(GLenum target, GLshort s, GLshort t, GLshort r, GLshort q)
+{
+   SGIS_GUARD_CTX();
+   glMultiTexCoord4sARB(convert_sgis_target_to_arb(target), s, t, r, q);
+}
+
+void GLAPIENTRY glMultiTexCoord4svSGIS(GLenum target, const GLshort *v)
+{
+   SGIS_GUARD_CTX();
+   glMultiTexCoord4svARB(convert_sgis_target_to_arb(target), v);
+}
 
 /**********************************************************************/
 /*****                    State management                        *****/
