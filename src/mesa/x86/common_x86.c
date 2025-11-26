@@ -140,43 +140,44 @@ static void check_os_sse_support( void )
          _mesa_x86_cpu_features &= ~(X86_FEATURE_XMM);
    }
 #elif defined(WIN32)
-   LPTOP_LEVEL_EXCEPTION_FILTER oldFilter;
+/* Nejc - disable OS SSE test, since we(3dfx) can run only on win9x and winNt and was causing Oni to crash */
+   // LPTOP_LEVEL_EXCEPTION_FILTER oldFilter;
    
-   /* Install our ExceptionFilter */
-   oldFilter = SetUnhandledExceptionFilter( ExceptionFilter );
+   // /* Install our ExceptionFilter */
+   // oldFilter = SetUnhandledExceptionFilter( ExceptionFilter );
    
-   if ( cpu_has_xmm ) {
-      _mesa_debug(NULL, "Testing OS support for SSE...\n");
+   // if ( cpu_has_xmm ) {
+   //    _mesa_debug(NULL, "Testing OS support for SSE...\n");
 
-      _mesa_test_os_sse_support();
+   //    _mesa_test_os_sse_support();
 
-      if ( cpu_has_xmm ) {
-	 _mesa_debug(NULL, "Yes.\n");
-      } else {
-	 _mesa_debug(NULL, "No!\n");
-      }
-   }
+   //    if ( cpu_has_xmm ) {
+	//  _mesa_debug(NULL, "Yes.\n");
+   //    } else {
+	//  _mesa_debug(NULL, "No!\n");
+   //    }
+   // }
 
-   if ( cpu_has_xmm ) {
-      _mesa_debug(NULL, "Testing OS support for SSE unmasked exceptions...\n");
+   // if ( cpu_has_xmm ) {
+   //    _mesa_debug(NULL, "Testing OS support for SSE unmasked exceptions...\n");
 
-      _mesa_test_os_sse_exception_support();
+   //    _mesa_test_os_sse_exception_support();
 
-      if ( cpu_has_xmm ) {
-	 _mesa_debug(NULL, "Yes.\n");
-      } else {
-	 _mesa_debug(NULL, "No!\n");
-      }
-   }
+   //    if ( cpu_has_xmm ) {
+	//  _mesa_debug(NULL, "Yes.\n");
+   //    } else {
+	//  _mesa_debug(NULL, "No!\n");
+   //    }
+   // }
 
-   /* Restore previous exception filter */
-   SetUnhandledExceptionFilter( oldFilter );
+   // /* Restore previous exception filter */
+   // SetUnhandledExceptionFilter( oldFilter );
 
-   if ( cpu_has_xmm ) {
-      _mesa_debug(NULL, "Tests of OS support for SSE passed.\n");
-   } else {
-      _mesa_debug(NULL, "Tests of OS support for SSE failed!\n");
-   }
+   // if ( cpu_has_xmm ) {
+   //    _mesa_debug(NULL, "Tests of OS support for SSE passed.\n");
+   // } else {
+   //    _mesa_debug(NULL, "Tests of OS support for SSE failed!\n");
+   // }
 #else
    /* Do nothing on other platforms for now.
     */
