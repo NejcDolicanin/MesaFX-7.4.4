@@ -1464,6 +1464,25 @@ void fxDDChooseRenderState(GLcontext *ctx)
    GLuint flags = ctx->_TriangleCaps;
    GLuint index = 0;
 
+   /* Nejc Quake engine - Strip features that cause software fallbacks on Voodoo hardware */
+   /* Request for anti-aliased points (smooth edges on rendered points).
+   /* This one is the biggest perf kill */
+   if (flags & DD_POINT_SMOOTH)
+   {
+      ctx->Point.SmoothFlag = GL_FALSE;
+      ctx->_TriangleCaps &= ~DD_POINT_SMOOTH;
+      flags &= ~DD_POINT_SMOOTH;
+   }
+   
+   /* Request for polygon smoothing (anti-aliased triangles, sometimes called GL_POLYGON_SMOOTH). */
+   if (flags & DD_TRI_SMOOTH)
+    {
+       ctx->Polygon.SmoothFlag = GL_FALSE;
+       ctx->_TriangleCaps &= ~DD_TRI_SMOOTH;
+       flags &= ~DD_TRI_SMOOTH;
+    }
+   
+
    if (flags & (ANY_FALLBACK_FLAGS|ANY_RASTER_FLAGS)) {
       if (flags & ANY_RASTER_FLAGS) {
 	 if (flags & DD_TRI_TWOSTENCIL)       index |= FX_TWOSTENCIL_BIT;
