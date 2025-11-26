@@ -769,7 +769,8 @@ extern int TDFX_DEBUG;
 #endif
 
 /* dirty hacks */
-#define FX_RESCALE_BIG_TEXURES_HACK   1
-#define FX_COMPRESS_S3TC_AS_FXT1_HACK 1
+#define FX_RESCALE_BIG_TEXURES_HACK   0 /* fake textures larger than HW can support */
+#define FX_COMPRESS_S3TC_AS_FXT1_HACK 1 /* map S3TC to FXT1 */
+#define FX_TC_NAPALM 1                  /* map GL_COMPRESSED_RGB[A] to FXT1. Works with VSA100-based cards only. */
 
 #endif

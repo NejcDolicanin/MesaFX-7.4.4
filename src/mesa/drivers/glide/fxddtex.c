@@ -1387,11 +1387,27 @@ fxDDTexImage2D(GLcontext * ctx, GLenum target, GLint level,
    }
 #endif
 
+   /* NEJC Set the base format before choosing texture format */
+   texImage->_BaseFormat = _mesa_base_tex_format(ctx, internalFormat);
+
    /* choose the texture format */
    assert(ctx->Driver.ChooseTextureFormat);
    texImage->TexFormat = (*ctx->Driver.ChooseTextureFormat)(ctx,
                                           internalFormat, format, type);
    assert(texImage->TexFormat);
+
+   /* Nejc - In this driver path we bypass Mesa's choose_texture_format helper,
+    * so we must infer IsCompressed from the chosen TexFormat ourselves.
+    * Compressed Mesa formats have TexelBytes == 0.
+    */
+   if (texImage->TexFormat->TexelBytes == 0) {
+      texImage->IsCompressed = GL_TRUE;
+   }
+   else {
+      texImage->IsCompressed = GL_FALSE;
+      texImage->CompressedSize = 0;
+   }
+
    texelBytes = texImage->TexFormat->TexelBytes;
    /*if (!fxMesa->HaveTexFmt) assert(texelBytes == 1 || texelBytes == 2);*/
 
