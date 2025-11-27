@@ -263,6 +263,14 @@ fxAllocTexObjData(fxMesaContext fxMesa)
    ti->tScale = 256.0F;
    ti->sScale = 256.0F;
 
+   /* Initialize TMU affinity fields */
+   ti->upload_stamp[0] = 0; /* not uploaded */
+   ti->upload_stamp[1] = 0; /* not uploaded */
+
+   /* initialize per-frame duplicate suppression */
+   ti->last_uploaded_level[0] = -1;
+   ti->last_uploaded_level[1] = -1;
+
    return ti;
 }
 
@@ -1648,7 +1656,35 @@ fxDDTexSubImage2D(GLcontext * ctx, GLenum target, GLint level,
    }
 
    if (ti->validated && ti->isInTM && !texObj->GenerateMipmap)
-      fxTMReloadMipMapLevel(fxMesa, texObj, level);
+      {
+         /* Prefer partial row uploads whenever possible for uncompressed formats.
+         Glide's partial API uploads whole rows between [y0, y0+h), so we always
+         ship full rows for the affected y-range regardless of xoffset/width. */
+      if (!texImage->IsCompressed)
+      {
+         GLint y0 = yoffset * mml->hScale;
+         GLint h = height * mml->hScale;
+         if (h < 1)
+            h = 1;
+         if (y0 < 0)
+            y0 = 0;
+         if (y0 + h > mml->height)
+            h = mml->height - y0;
+         if (h > 0)
+         {
+            fxTMReloadSubMipMapLevel(fxMesa, texObj, level, y0, h);
+         }
+         else
+         {
+            fxTMReloadMipMapLevel(fxMesa, texObj, level);
+         }
+      }
+      else
+      {
+         /* Compressed formats: no row-partial API, upload full level */
+         fxTMReloadMipMapLevel(fxMesa, texObj, level);
+      }
+      }
    else
       fxTexInvalidate(ctx, texObj, INVALIDATE_NONE);
 }

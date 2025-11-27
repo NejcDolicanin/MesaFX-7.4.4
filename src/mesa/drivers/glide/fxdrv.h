@@ -307,6 +307,17 @@ typedef struct tfxTexInfo_t
    GLboolean validated;
 
    GLboolean padded;
+
+   /* NEJC SOF: New fields for TMU affinity and pinning */
+   GLuint upload_stamp[2];   /* last frame this texture was uploaded to TMU n */
+
+   /* Streaming texture detection to avoid CPU S3TC/FXT1 overhead */
+   GLboolean streaming;           /* set true if updated almost every frame */
+   GLuint    stream_updates;      /* number of consecutive frame updates */
+   GLuint    last_update_frame;   /* last frame index this texture got TexImage */
+
+   /* Per-frame duplicate-upload suppression */
+   GLint     last_uploaded_level[2]; /* last full/partial level uploaded on TMU n in current frame */
 }
 tfxTexInfo;
 
@@ -556,6 +567,9 @@ struct tfxMesaContext
    FxBool HaveTexus2;	/* Texus 2 - FXT1 */
    struct tdfx_glide Glide;
    char rendererString[64];
+
+   /* NEJC SOF: Frame counter and TMU state cache */
+   GLuint frame_no;     /* increment once per SwapBuffers */
 };
 
 
