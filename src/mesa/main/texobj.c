@@ -707,6 +707,7 @@ _mesa_GenTextures( GLsizei n, GLuint *textures )
       struct gl_texture_object *texObj;
       GLuint name = first + i;
       GLenum target = 0;
+      texObj = (*ctx->Driver.NewTextureObject)(ctx, name, target);
       
       /* find a free ID */
       name = _mesa_HashFindFreeKeyBlock(ctx->Shared->TexObjects, 1);

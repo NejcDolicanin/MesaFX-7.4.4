@@ -1388,6 +1388,11 @@ fxDDTexImage2D(GLcontext * ctx, GLenum target, GLint level,
    }
    mml = FX_MIPMAP_DATA(texImage);
 
+   /* NEJC Initialize the texture image fields FIRST */
+   _mesa_init_teximage_fields(ctx, target, texImage,
+                              width, height, 1,
+                              border, internalFormat);
+
    fxTexGetInfo(width, height, NULL, NULL, NULL, NULL,
 		&mml->wScale, &mml->hScale);
 
