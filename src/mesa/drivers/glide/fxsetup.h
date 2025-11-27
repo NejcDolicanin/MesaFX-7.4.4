@@ -51,6 +51,17 @@
  *      fiddle with grTexColorCombine/grTexAlphaCombine
  */
 
+/* Compatibility aliases for EXT/ARB token variants */
+#ifndef GL_SUBTRACT_EXT
+#define GL_SUBTRACT_EXT GL_SUBTRACT
+#endif
+#ifndef GL_ADD_SIGNED_EXT
+#define GL_ADD_SIGNED_EXT GL_ADD_SIGNED
+#endif
+#ifndef GL_INTERPOLATE_EXT
+#define GL_INTERPOLATE_EXT GL_INTERPOLATE
+#endif
+
 /*
  * These macros are used below when handling COMBINE_EXT.
  */
@@ -461,10 +472,43 @@ fxSetupTextureEnvNapalm_NoLock(GLcontext * ctx, GLuint textureset, GLuint tmu, G
                   colorComb.InvertC = FXTRUE;
                   colorComb.SourceD = GR_CMBX_ZERO;
                   break;
+               case GL_ADD_SIGNED_EXT:
+         /* Approximate as ADD (ignoring -0.5 bias due to hardware limits) */
+         TEXENV_SETUP_ARG_RGB(colorComb.SourceA,
+                              texUnit->Combine.SourceRGB[0],
+                              texUnit->Combine.OperandRGB[0],
+                              localc, locala);
+         TEXENV_SETUP_MODE_RGB(colorComb.ModeA,
+                               texUnit->Combine.OperandRGB[0]);
+         TEXENV_SETUP_ARG_RGB(colorComb.SourceB,
+                              texUnit->Combine.SourceRGB[1],
+                              texUnit->Combine.OperandRGB[1],
+                              localc, locala);
+         TEXENV_SETUP_MODE_RGB(colorComb.ModeB,
+                               texUnit->Combine.OperandRGB[1]);
+         colorComb.SourceC = GR_CMBX_ZERO;
+         colorComb.InvertC = FXTRUE;
+         colorComb.SourceD = GR_CMBX_ZERO;
+         break;
+      case GL_SUBTRACT_EXT:
+         /* Arg0 - Arg1 = (A + (-B)) * 1 + 0 */
+         TEXENV_SETUP_ARG_RGB(colorComb.SourceA,
+                              texUnit->Combine.SourceRGB[0],
+                              texUnit->Combine.OperandRGB[0],
+                              localc, locala);
+         TEXENV_SETUP_MODE_RGB(colorComb.ModeA,
+                               texUnit->Combine.OperandRGB[0]);
+         TEXENV_SETUP_ARG_RGB(colorComb.SourceB,
+                              texUnit->Combine.SourceRGB[1],
+                              texUnit->Combine.OperandRGB[1],
+                              localc, locala);
+         colorComb.ModeB = GR_FUNC_MODE_NEGATIVE_X;
+         colorComb.SourceC = GR_CMBX_ZERO;
+         colorComb.InvertC = FXTRUE;
+         colorComb.SourceD = GR_CMBX_ZERO;
+         break;
              case GL_INTERPOLATE_EXT:
-                  /* Arg0 * Arg2 + Arg1 * (1 - Arg2) ==
-                   * (Arg0 - Arg1) * Arg2 + Arg1 == (A - B) * C + D
-                   */
+                  /* Arg0 * Arg2 + Arg1 * (1 - Arg2) == (A - B) * C + B */
                   TEXENV_SETUP_ARG_RGB(colorComb.SourceA,
                                        texUnit->Combine.SourceRGB[0],
                                        texUnit->Combine.OperandRGB[0],
@@ -475,13 +519,8 @@ fxSetupTextureEnvNapalm_NoLock(GLcontext * ctx, GLuint textureset, GLuint tmu, G
                                        texUnit->Combine.SourceRGB[1],
                                        texUnit->Combine.OperandRGB[1],
                                        localc, locala);
-                  if (TEXENV_OPERAND_INVERTED(texUnit->Combine.OperandRGB[1])) {
-                     /* Hack alert!!! This case is wrong!!! */
-                     fprintf(stderr, "COMBINE_EXT_color: WRONG!!!\n");
-                     colorComb.ModeB = GR_FUNC_MODE_NEGATIVE_X;
-                  } else {
-                     colorComb.ModeB = GR_FUNC_MODE_NEGATIVE_X;
-                  }
+                  /* Implement (A - B) by using NEGATIVE_X on B */
+                  colorComb.ModeB = GR_FUNC_MODE_NEGATIVE_X;
                   /*
                    * The Source/Operand for the C value must
                    * specify some kind of alpha value.
@@ -491,7 +530,9 @@ fxSetupTextureEnvNapalm_NoLock(GLcontext * ctx, GLuint textureset, GLuint tmu, G
                                      texUnit->Combine.OperandRGB[2],
                                      locala);
                   colorComb.InvertC = FXFALSE;
+                  /* D = B */
                   colorComb.SourceD = GR_CMBX_B;
+                  colorComb.InvertD = FXFALSE;
                   break;
              default:
                   fprintf(stderr, "COMBINE_EXT_color: %s\n",
@@ -549,6 +590,68 @@ fxSetupTextureEnvNapalm_NoLock(GLcontext * ctx, GLuint textureset, GLuint tmu, G
                   alphaComb.InvertC = FXTRUE;
                   alphaComb.SourceD = GR_CMBX_ZERO;
                   break;
+             case GL_ADD_SIGNED_EXT:
+         /* Approximate as ADD for alpha (ignoring -0.5 bias) */
+         TEXENV_SETUP_ARG_A(alphaComb.SourceA,
+                            texUnit->Combine.SourceA[0],
+                            texUnit->Combine.OperandA[0],
+                            locala);
+         TEXENV_SETUP_MODE_A(alphaComb.ModeA,
+                             texUnit->Combine.OperandA[0]);
+         TEXENV_SETUP_ARG_A(alphaComb.SourceB,
+                            texUnit->Combine.SourceA[1],
+                            texUnit->Combine.OperandA[1],
+                            locala);
+         TEXENV_SETUP_MODE_A(alphaComb.ModeB,
+                             texUnit->Combine.OperandA[1]);
+         alphaComb.SourceC = GR_CMBX_ZERO;
+         alphaComb.InvertC = FXTRUE;
+         alphaComb.SourceD = GR_CMBX_ZERO;
+         break;
+      case GL_SUBTRACT_EXT:
+         /* Arg0 - Arg1 = (A + (-B)) * 1 + 0 */
+         TEXENV_SETUP_ARG_A(alphaComb.SourceA,
+                            texUnit->Combine.SourceA[0],
+                            texUnit->Combine.OperandA[0],
+                            locala);
+         TEXENV_SETUP_MODE_A(alphaComb.ModeA,
+                             texUnit->Combine.OperandA[0]);
+         TEXENV_SETUP_ARG_A(alphaComb.SourceB,
+                            texUnit->Combine.SourceA[1],
+                            texUnit->Combine.OperandA[1],
+                            locala);
+         alphaComb.ModeB = GR_FUNC_MODE_NEGATIVE_X;
+         alphaComb.SourceC = GR_CMBX_ZERO;
+         alphaComb.InvertC = FXTRUE;
+         alphaComb.SourceD = GR_CMBX_ZERO;
+         break;
+      case GL_INTERPOLATE_EXT:
+         /* Arg0 * Arg2 + Arg1 * (1 - Arg2) == (A - B) * C + B == (A - B) * C + D */
+         TEXENV_SETUP_ARG_A(alphaComb.SourceA,
+                            texUnit->Combine.SourceA[0],
+                            texUnit->Combine.OperandA[0],
+                            locala);
+         TEXENV_SETUP_MODE_A(alphaComb.ModeA,
+                             texUnit->Combine.OperandA[0]);
+         TEXENV_SETUP_ARG_A(alphaComb.SourceB,
+                            texUnit->Combine.SourceA[1],
+                            texUnit->Combine.OperandA[1],
+                            locala);
+         /* Implement (A - B) by using NEGATIVE_X on B */
+         alphaComb.ModeB = GR_FUNC_MODE_NEGATIVE_X;
+         /* C must be some alpha channel */
+         TEXENV_SETUP_ARG_A(alphaComb.SourceC,
+                            texUnit->Combine.SourceA[2],
+                            texUnit->Combine.OperandA[2],
+                            locala);
+         alphaComb.InvertC = FXFALSE;
+         /* D = B */
+         TEXENV_SETUP_ARG_A(alphaComb.SourceD,
+                            texUnit->Combine.SourceA[1],
+                            texUnit->Combine.OperandA[1],
+                            locala);
+         alphaComb.InvertD = FXFALSE;
+         break;
              default:
                   fprintf(stderr, "COMBINE_EXT_alpha: %s\n",
                                   _mesa_lookup_enum_by_nr(texUnit->Combine.ModeA));
