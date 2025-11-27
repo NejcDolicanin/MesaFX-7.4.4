@@ -642,19 +642,37 @@ fxTMReloadSubMipMapLevel(fxMesaContext fxMesa,
       exit(-1);
    }
 
+   /* Ensure residency only if needed */
    tmu = (int) ti->whichTMU;
-   fxTMMoveInTM(fxMesa, tObj, tmu);
+   if (!ti->isInTM || ti->tm[tmu] == NULL)
+   {
+      fxTMMoveInTM(fxMesa, tObj, tmu);
+   }
 
-   fxTexGetInfo(mml->width, mml->height,
-		&lodlevel, NULL, NULL, NULL, NULL, NULL);
+   /* Compute lod level consistent with full uploads */
+   lodlevel = ti->info.largeLodLog2 - (level - ti->minLevel);
 
-   if ((ti->info.format == GR_TEXFMT_INTENSITY_8) ||
-       (ti->info.format == GR_TEXFMT_P_8) ||
-       (ti->info.format == GR_TEXFMT_ALPHA_8))
-	 data = (GLushort *) texImage->Data + ((yoffset * mml->width) >> 1);
-   else
-      data = (GLushort *) texImage->Data + yoffset * mml->width;
-
+   /* Compute byte-accurate row pointer */
+   {
+      int bpp = 2;
+      switch (ti->info.format)
+      {
+      case GR_TEXFMT_INTENSITY_8:
+      case GR_TEXFMT_P_8:
+      case GR_TEXFMT_ALPHA_8:
+         bpp = 1;
+         break;
+      case GR_TEXFMT_ARGB_8888:
+         bpp = 4;
+         break;
+      default:
+         /* Most uncompressed Glide formats here are 16-bit (2 bytes) */
+         bpp = 2;
+         break;
+      }
+      data = (void *)((GLubyte *)texImage->Data + (yoffset * mml->width * bpp));
+   }
+   
    switch (tmu) {
    case FX_TMU0:
    case FX_TMU1:
