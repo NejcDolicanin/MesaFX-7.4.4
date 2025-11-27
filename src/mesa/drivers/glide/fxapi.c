@@ -1021,6 +1021,11 @@ fxMesaSwapBuffers(void)
       }
       /* Increment frame counter */
       fxMesaCurrentCtx->frame_no++;
+
+      /* Reset combine guard here too */
+      fxMesaCurrentCtx->lastCombineTex[0] = NULL;
+      fxMesaCurrentCtx->lastCombineTex[1] = NULL;
+      fxMesaCurrentCtx->lastUnitsMode = FX_UM_NONE;
    }
 }
 

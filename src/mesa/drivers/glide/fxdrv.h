@@ -570,6 +570,9 @@ struct tfxMesaContext
 
    /* NEJC SOF: Frame counter and TMU state cache */
    GLuint frame_no;     /* increment once per SwapBuffers */
+
+   /* Skip combine - Last combine tracking */
+   struct gl_texture_object *lastCombineTex[2]; /* one per texture unit */
 };
 
 
