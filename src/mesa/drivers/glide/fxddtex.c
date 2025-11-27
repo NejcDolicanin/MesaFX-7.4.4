@@ -47,6 +47,23 @@
 #include "main/texobj.h"
 #include "main/texstore.h"
 
+/* Nejc ToDo - Check if you can just enable opengl 1.5 and get them from that header??*/
+/* Compatibility tokens for older headers/builds */
+#ifndef GL_MIRRORED_REPEAT
+#define GL_MIRRORED_REPEAT 0x8370
+#endif
+#ifndef GL_RGB_S3TC
+#define GL_RGB_S3TC 0x83A0
+#endif
+#ifndef GL_RGB4_S3TC
+#define GL_RGB4_S3TC 0x83A1
+#endif
+#ifndef GL_RGBA_S3TC
+#define GL_RGBA_S3TC 0x83A2
+#endif
+#ifndef GL_RGBA4_S3TC
+#define GL_RGBA4_S3TC 0x83A3
+#endif
 
 /* no borders! can't halve 1x1! (stride > width * comp) not allowed */
 static void
