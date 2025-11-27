@@ -260,6 +260,15 @@ typedef struct
 }
 tfxMipMapLevel;
 
+/* Texture invalidation reasons, for TMU management */
+typedef enum
+{
+   INVALIDATE_NONE = 0,
+   INVALIDATE_PARAMS = 1,  // Base/max level, min filter
+   INVALIDATE_PALETTE = 2, // Palette changes
+   INVALIDATE_DATA = 4     // New texture data
+} tfxInvalidateReason;
+
 /*
  * TDFX-specific texture object data.  This hangs off of the
  * struct gl_texture_object DriverData pointer.
@@ -518,6 +527,7 @@ struct tfxMesaContext
    GLboolean haveZBuffer;
    GLboolean haveDoubleBuffer;
    GLboolean haveGlobalPaletteTexture;
+   GLboolean keepResidentOnInvalidate; /* Keep textures resident on fxTexInvalidate (avoid evict+reupload on param changes) */
    GLint swapInterval;
    GLint maxPendingSwapBuffers;
 

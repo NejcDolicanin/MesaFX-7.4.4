@@ -422,6 +422,26 @@ fxSetupSingleTMU_NoLock(fxMesaContext fxMesa, struct gl_texture_object *tObj)
       grTexMipMapMode(tmu, ti->mmMode, FXFALSE);
 
       grTexSource(tmu, ti->tm[tmu]->startAddr, GR_MIPMAPLEVELMASK_BOTH, &(ti->info));
+
+      /* If texture was invalidated but kept resident, push new CPU-side data now.
+      Compensating mechanism for keepResidentOnInvalidate
+
+      1. Checks if the texture is still loaded in TMU memory (ti->isInTM).
+      2. Checks if Mesa marked it invalidated (!ti->validated).
+      3. If both are true → it reuploads all mipmap levels back into the TMU in place.
+      Essentially performing a "refresh" rather than a full fxTMMoveOutTM + MoveInTM cycle.
+      4. Marks it as valid again (ti->validated = GL_TRUE).
+      */
+      if (ti->isInTM && !ti->validated)
+      {
+         int l, i;
+         for (i = FX_largeLodValue(ti->info), l = ti->minLevel;
+              i <= FX_smallLodValue(ti->info); i++, l++)
+         {
+            fxTMReloadMipMapLevel(fxMesa, tObj, l);
+         }
+         ti->validated = GL_TRUE;
+      }
    }
 }
 
