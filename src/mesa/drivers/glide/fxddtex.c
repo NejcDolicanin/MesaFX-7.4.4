@@ -1863,9 +1863,11 @@ fxDDCompressedTexSubImage2D( GLcontext *ctx, GLenum target,
     * see fxDDCompressedTexImage2D for caveats
     */
    if (mml->wScale != 1 || mml->hScale != 1) {
-      srcRowStride = _mesa_compressed_row_stride(texImage->InternalFormat, texImage->Width);
+      const GLuint mesaFormat = texImage->TexFormat->MesaFormat;
 
-      destRowStride = _mesa_compressed_row_stride(texImage->InternalFormat,
+      srcRowStride = _mesa_compressed_row_stride(mesaFormat, texImage->Width);
+
+      destRowStride = _mesa_compressed_row_stride(mesaFormat,
                                                mml->width);
       _mesa_upscale_teximage2d(srcRowStride, texImage->Height / 4,
                                destRowStride, mml->height / 4,
