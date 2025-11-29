@@ -780,22 +780,10 @@ if (TDFX_DEBUG & VERBOSE_DRIVER)
       goto errorhandler;
    }
 
-   fxMesa->glBuffer = _mesa_create_framebuffer(fxMesa->glVis);
-   /* Nejc: From Mesa6.4.2 Use new framebuffer infrastructure with renderbuffers */
-   //fxMesa->glBuffer = fxNewFramebuffer(ctx, fxMesa->glVis);
-
-#if 0
-/* XXX this is a complete mess :(
- *	_mesa_add_soft_renderbuffers
- *	driNewRenderbuffer
- */
-					       GL_FALSE,	/* no software depth */
-					       stencilSize && !fxMesa->haveHwStencil,
-					       fxMesa->glVis->accumRedBits > 0,
-					       alphaSize && !fxMesa->haveHwAlpha);
-#endif
+   /* Create framebuffer using Mesa 6.4.2 renderbuffer infrastructure */
+   fxMesa->glBuffer = fxNewFramebuffer(ctx, fxMesa->glVis);
    if (!fxMesa->glBuffer) {
-      str = "_mesa_create_framebuffer";
+      str = "fxNewFramebuffer";
       goto errorhandler;
    }
 
