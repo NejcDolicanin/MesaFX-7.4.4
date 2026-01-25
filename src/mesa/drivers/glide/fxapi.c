@@ -241,6 +241,7 @@ static GrScreenResolution_t fxBestResolution (int width, int height)
         {GR_RESOLUTION_1920x800, 1920, 800},
         {GR_RESOLUTION_1920x1080, 1920, 1080},
         {GR_RESOLUTION_1920x1200, 1920, 1200},
+        {GR_RESOLUTION_1960x840, 1960, 840},
         /* This one added so we have an unreachable max, if more come */
         {GR_RESOLUTION_3840x2160, 3840, 2160}};
  
