@@ -267,6 +267,16 @@ static int curPFD = 0;
 static HDC hDC;
 static HWND hWND;
 
+/* focus / restore handling */
+static int fxwgl_is_suspended = 0;
+static int fxwgl_in_restore = 0;
+static int fxwgl_needs_restore = 0;
+static int fxwgl_is_minimized = 0;
+static int fxwgl_has_focus = 0;
+static int fxwgl_is_foreground = 0;
+static int fxwgl_want_suspend = 0;
+static int fxwgl_want_resume = 0;
+
 /* Nejc: Debug logging */
 static FILE *debugLog = NULL;
 static void fxDebugLog(const char *format, ...)
@@ -317,13 +327,52 @@ __wglMonitor (HWND hwnd, UINT message, UINT wParam, LONG lParam)
 {
    long ret;                    /* Now gives the resized window at the end to hWNDOldProc */
 
+#if 0 /* Verbose logging - commented out for simplified event tracking */
+   /* Log entry for all messages */
+   fxDebugLog("__wglMonitor: hwnd=%p, msg=0x%04X, wParam=0x%08X, lParam=0x%08lX\n", 
+              hwnd, message, wParam, lParam);
+   fxDebugLog("  State: suspended=%d, in_restore=%d, needs_restore=%d, minimized=%d, has_focus=%d, foreground=%d\n",
+              fxwgl_is_suspended, fxwgl_in_restore, fxwgl_needs_restore, 
+              fxwgl_is_minimized, fxwgl_has_focus, fxwgl_is_foreground);
+#endif
+
    if (ctx && hwnd == hWND) {
       switch (message) {
          case WM_PAINT:
+#if 0
+            fxDebugLog("  -> WM_PAINT\n");
+#endif
+            break;
          case WM_MOVE:
+#if 0
+            fxDebugLog("  -> WM_MOVE\n");
+#endif
             break;
          case WM_DISPLAYCHANGE:
+#if 0
+            fxDebugLog("  -> WM_DISPLAYCHANGE\n");
+#endif
+            /* Simplified event marker: Resolution change (not during Alt-Tab) */
+            if (!fxwgl_is_minimized) {
+               fxDebugLog(">>> EVENT: Resolution change detected\n");
+            }
+            break;
          case WM_SIZE:
+#if 0
+            fxDebugLog("  -> WM_SIZE: wParam=%d (RESTORED=%d, MINIMIZED=%d, MAXIMIZED=%d, MAXSHOW=%d, MAXHIDE=%d)\n",
+                       wParam, SIZE_RESTORED, SIZE_MINIMIZED, SIZE_MAXIMIZED, SIZE_MAXSHOW, SIZE_MAXHIDE);
+#endif
+            if (wParam == SIZE_MINIMIZED) {
+#if 0
+               fxDebugLog("  -> Window MINIMIZED\n");
+#endif
+               fxwgl_is_minimized = 1;
+            } else if (wParam == SIZE_RESTORED) {
+#if 0
+               fxDebugLog("  -> Window RESTORED\n");
+#endif
+               fxwgl_is_minimized = 0;
+            }
 #if 0
             if (wParam != SIZE_MINIMIZED) {
                static int moving = 0;
@@ -346,19 +395,73 @@ __wglMonitor (HWND hwnd, UINT message, UINT wParam, LONG lParam)
 #endif
             break;
          case WM_ACTIVATE:
+#if 0
+            fxDebugLog("  -> WM_ACTIVATE: wParam=0x%08X (LOWORD=%d, HIWORD=%d)\n", 
+                       wParam, LOWORD(wParam), HIWORD(wParam));
+#endif
+            /* Simplified event marker: Alt-Tab SUSPEND */
+            if (LOWORD(wParam) == WA_INACTIVE && HIWORD(wParam) != 0) {
+               fxDebugLog(">>> EVENT: Alt-Tab SUSPEND detected\n");
+            }
+            
+            if (LOWORD(wParam) == WA_INACTIVE) {
+#if 0
+               fxDebugLog("  -> Window DEACTIVATED (lost focus)\n");
+#endif
+               fxwgl_has_focus = 0;
+            } else if (LOWORD(wParam) == WA_ACTIVE || LOWORD(wParam) == WA_CLICKACTIVE) {
+#if 0
+               fxDebugLog("  -> Window ACTIVATED (gained focus) - %s\n",
+                          LOWORD(wParam) == WA_ACTIVE ? "WA_ACTIVE" : "WA_CLICKACTIVE");
+#endif
+               fxwgl_has_focus = 1;
+               
+               /* Simplified event marker: Alt-Tab RESUME */
+               if (fxwgl_is_minimized) {
+                  fxDebugLog(">>> EVENT: Alt-Tab RESUME detected\n");
+               }
+            }
+#if 0
+            if (HIWORD(wParam)) {
+               fxDebugLog("  -> Window was MINIMIZED during activation change\n");
+            }
+#endif
             break;
          case WM_SHOWWINDOW:
+#if 0
+            fxDebugLog("  -> WM_SHOWWINDOW: wParam=%d (show=%d)\n", wParam, wParam);
+#endif
             break;
          case WM_SYSKEYDOWN:
+#if 0
+            fxDebugLog("  -> WM_SYSKEYDOWN: key=0x%08X\n", wParam);
+#endif
+            break;
          case WM_SYSCHAR:
+#if 0
+            fxDebugLog("  -> WM_SYSCHAR: char=0x%08X\n", wParam);
+#endif
             break;
       }
    }
+#if 0
+   else {
+      if (!ctx) {
+         fxDebugLog("  -> No context (ctx=NULL)\n");
+      }
+      if (hwnd != hWND) {
+         fxDebugLog("  -> Different window (hwnd=%p, hWND=%p)\n", hwnd, hWND);
+      }
+   }
+#endif
 
    /* Finally call the hWNDOldProc, which handles the resize with the
     * now changed window sizes */
    ret = CallWindowProc(hWNDOldProc, hwnd, message, wParam, lParam);
 
+#if 0
+   fxDebugLog("__wglMonitor: EXIT (ret=%ld)\n", ret);
+#endif
    return ret;
 }
 
@@ -383,21 +486,31 @@ wglCreateContext (HDC hdc)
    HWND hWnd;
    WNDPROC oldProc;
    int error;
+   static int context_count = 0;
+
+   fxDebugLog("wglCreateContext: ENTER hdc=%p\n", hdc);
 
    if (ctx) {
+      fxDebugLog("  -> Context already exists, returning NULL\n");
       SetLastError(0);
       return NULL;
    }
 
    if (!(hWnd = WindowFromDC(hdc))) {
+      fxDebugLog("  -> WindowFromDC failed, returning NULL\n");
       SetLastError(0);
       return NULL;
    }
 
+   fxDebugLog("  -> Window handle: %p\n", hWnd);
+
    if (curPFD == 0) {
+      fxDebugLog("  -> No pixel format set, returning NULL\n");
       wgl_error(WGL_INVALID_PIXELFORMAT);
       return NULL;
    }
+
+   fxDebugLog("  -> Current pixel format: %d\n", curPFD);
 
    /* Nejc: When forcing 16-bit, ensure curPFD is within valid range */
    if (fxGetRegistryOrEnvironmentString("FX_MESA_FORCE_16BPP_PIX") != NULL)
@@ -437,16 +550,27 @@ wglCreateContext (HDC hdc)
    }
 
    if (error) {
+      fxDebugLog("  -> fxMesaCreateContext/fxMesaCreateBestContext FAILED\n");
       SetLastError(0);
       return NULL;
    }
 
+   fxDebugLog("  -> Context created successfully: ctx=%p\n", ctx);
+
    hDC = hdc;
    hWND = hWnd;
 
+   /* Simplified event marker: Game video restarted */
+   context_count++;
+   if (context_count > 1) {
+      fxDebugLog(">>> EVENT: Game video restarted (context #%d created)\n", context_count);
+   }
+
+   fxDebugLog("  -> Calling wglMakeCurrent to activate context\n");
    /* Required by the OpenGL Optimizer 1.1 (is it a Optimizer bug ?) */
    wglMakeCurrent(hdc, (HGLRC)1);
 
+   fxDebugLog("wglCreateContext: EXIT - returning (HGLRC)1\n");
    return (HGLRC)1;
 }
 
@@ -460,17 +584,21 @@ wglCreateLayerContext (HDC hdc, int iLayerPlane)
 GLAPI BOOL GLAPIENTRY
 wglDeleteContext (HGLRC hglrc)
 {
-   if (ctx && hglrc == (HGLRC)1) {
+   fxDebugLog("wglDeleteContext: ENTER hglrc=%p, ctx=%p\n", hglrc, ctx);
 
+   if (ctx && hglrc == (HGLRC)1) {
+      fxDebugLog("  -> Calling fxMesaDestroyContext\n");
       fxMesaDestroyContext(ctx);
 
       SetWindowLong(WindowFromDC(hDC), GWL_WNDPROC, (LONG) hWNDOldProc);
 
       ctx = NULL;
       hDC = 0;
+      fxDebugLog("wglDeleteContext: EXIT - SUCCESS\n");
       return TRUE;
    }
 
+   fxDebugLog("wglDeleteContext: EXIT - FAILED (invalid context)\n");
    SetLastError(0);
 
    return FALSE;
@@ -924,18 +1052,27 @@ wglGetDefaultProcAddress (LPCSTR lpszProc)
 GLAPI BOOL GLAPIENTRY
 wglMakeCurrent (HDC hdc, HGLRC hglrc)
 {
-   if ((hdc == NULL) && (hglrc == NULL))
+   fxDebugLog("wglMakeCurrent: ENTER hdc=%p, hglrc=%p\n", hdc, hglrc);
+   fxDebugLog("  State: ctx=%p, has_focus=%d, minimized=%d\n", ctx, fxwgl_has_focus, fxwgl_is_minimized);
+
+   if ((hdc == NULL) && (hglrc == NULL)) {
+      fxDebugLog("wglMakeCurrent: EXIT - releasing context (NULL params)\n");
       return TRUE;
+   }
 
    if (!ctx || hglrc != (HGLRC)1 || WindowFromDC(hdc) != hWND) {
+      fxDebugLog("wglMakeCurrent: EXIT - FAILED (ctx=%p, hglrc=%p, WindowFromDC=%p, hWND=%p)\n",
+                 ctx, hglrc, WindowFromDC(hdc), hWND);
       SetLastError(0);
       return FALSE;
    }
 
    hDC = hdc;
 
+   fxDebugLog("  -> Calling fxMesaMakeCurrent\n");
    fxMesaMakeCurrent(ctx);
 
+   fxDebugLog("wglMakeCurrent: EXIT - SUCCESS\n");
    return TRUE;
 }
 
@@ -1331,9 +1468,21 @@ wglSetPixelFormat (HDC hdc, int iPixelFormat, const PIXELFORMATDESCRIPTOR *ppfd)
 GLAPI BOOL GLAPIENTRY
 wglSwapBuffers (HDC hdc)
 {
+   static int last_has_focus = -1;
+   static int last_is_minimized = -1;
+
    if (!ctx) {
+      fxDebugLog("wglSwapBuffers: FAILED - no context\n");
       SetLastError(0);
       return FALSE;
+   }
+
+   /* Only log when state changes */
+   if (fxwgl_has_focus != last_has_focus || fxwgl_is_minimized != last_is_minimized) {
+      fxDebugLog("wglSwapBuffers: State changed - has_focus=%d, minimized=%d\n", 
+                 fxwgl_has_focus, fxwgl_is_minimized);
+      last_has_focus = fxwgl_has_focus;
+      last_is_minimized = fxwgl_is_minimized;
    }
 
    fxMesaSwapBuffers();
