@@ -132,16 +132,7 @@ int ReadRefreshFromRegistry(void)
 
 /* Detects if the current process is a Sin game executable.
  * Returns 1 if the executable name starts with "sin" (case-insensitive), 0 otherwise.
- * This is used to work around the 16-bit texture crash bug in Sin games. 
- * 
- * Because GL_SHARED_TEXTURE_PALETTE_EXT isnt handled well in Mesa.
- * Sin:
-- Uses paletted textures (CI8 format)
-- Enables GL_SHARED_TEXTURE_PALETTE_EXT
-- Uses a single global shared palette_ for ALL textures
-- combines with 16bit texture formats (like RGB565, ARGB4444)
-The issue is texstore.c, how rgb565 and argb4444 is handled Nejc ToDo
- * */
+ */
 // int DetectSinGame(void)
 // {
 //     char exePath[MAX_PATH];
@@ -172,4 +163,82 @@ The issue is texstore.c, how rgb565 and argb4444 is handled Nejc ToDo
 //     return 0;
 // }
 
-#endif
+/* Detects if the current process is a Quake 3 (id Tech 3) engine game.
+ * Searches for "GetRefAPI" string in the executable - the Q3 renderer API entry point.
+ * Returns 1 if detected, 0 otherwise. Result is cached after first call.
+ */
+int DetectQuake3Engine(void)
+{
+    static int cached_result = -1;
+    char exePath[MAX_PATH];
+    HANDLE hFile, hMap;
+    BYTE *data;
+    DWORD fileSize, i;
+    const char *pattern = "GetRefAPI";
+    
+    /* Return cached result if already computed */
+    if (cached_result >= 0)
+        return cached_result;
+    
+    /* Get the current executable path */
+    if (GetModuleFileName(NULL, exePath, MAX_PATH) == 0)
+    {
+        cached_result = 0;
+        return 0;
+    }
+    
+    /* Open the executable file */
+    hFile = CreateFileA(exePath, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
+    if (hFile == INVALID_HANDLE_VALUE)
+    {
+        cached_result = 0;
+        return 0;
+    }
+    
+    /* Get file size */
+    fileSize = GetFileSize(hFile, NULL);
+    if (fileSize == INVALID_FILE_SIZE || fileSize < 1024)
+    {
+        CloseHandle(hFile);
+        cached_result = 0;
+        return 0;
+    }
+    
+    /* Memory-map the file for efficient scanning */
+    hMap = CreateFileMapping(hFile, NULL, PAGE_READONLY, 0, 0, NULL);
+    if (!hMap)
+    {
+        CloseHandle(hFile);
+        cached_result = 0;
+        return 0;
+    }
+    
+    data = (BYTE *)MapViewOfFile(hMap, FILE_MAP_READ, 0, 0, 0);
+    if (!data)
+    {
+        CloseHandle(hMap);
+        CloseHandle(hFile);
+        cached_result = 0;
+        return 0;
+    }
+    
+    /* Search for "GetRefAPI" string - the Q3 renderer API entry point */
+    cached_result = 0;
+    for (i = 0; i < fileSize - 9; i++)
+    {
+        if (memcmp(data + i, pattern, 9) == 0)
+        {
+            cached_result = 1;
+            break;
+        }
+    }
+    
+    /* Cleanup */
+    UnmapViewOfFile(data);
+    CloseHandle(hMap);
+    CloseHandle(hFile);
+    
+    return cached_result;
+}
+
+#endif /* _WIN32 */

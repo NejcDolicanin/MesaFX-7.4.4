@@ -26,6 +26,13 @@ extern "C"
      */
     /* int DetectSinGame(void); */
 
+    /*
+     * Detects if the current process is a Quake 3 (id Tech 3) engine game.
+     * Searches for "GetRefAPI" string in the executable - the Q3 renderer API entry point.
+     * Returns 1 if detected, 0 otherwise. Result is cached after first call.
+     */
+    int DetectQuake3Engine(void);
+
 #ifdef __cplusplus
 }
 #endif

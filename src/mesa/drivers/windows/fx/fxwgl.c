@@ -504,7 +504,7 @@ wglCreateContext (HDC hdc)
    /* Simplified event marker: Game video restarted */
    context_count++;
    if (context_count > 1) {
-      fxDebugLog(">>> EVENT: Game video restarted (context #%d created)\n", context_count);
+     /* fxDebugLog(">>> EVENT: Game video restarted (context #%d created)\n", context_count); */
    }
 
    /* fxDebugLog("  -> Calling wglMakeCurrent to activate context\n"); */
