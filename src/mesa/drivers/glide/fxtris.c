@@ -82,8 +82,31 @@ static GLenum reduced_prim[GL_POLYGON+1] = {
 do {						\
    if (DO_FALLBACK)				\
       fxMesa->draw_tri( fxMesa, a, b, c );	\
-   else						\
-      grDrawTriangle( a, b, c );	\
+   else	{					\
+      /* HSR: Test triangle against tile cache for early rejection */ \
+      if (fxMesa->hsrEnabled && fxMesa->hsrDepthPassMode && fxMesa->hsrTileDepth) { \
+         fxMesa->stats.hsrTrianglesTotal++; \
+         /* Test all geometry - alpha test happens AFTER depth test in hardware */ \
+         /* Calculate triangle bounding box center and min Z */ \
+         GLfloat centerX = (a->x + b->x + c->x) / 3.0f; \
+         GLfloat centerY = (a->y + b->y + c->y) / 3.0f; \
+         GLfloat minZ = a->ooz; \
+         if (b->ooz < minZ) minZ = b->ooz; \
+         if (c->ooz < minZ) minZ = c->ooz; \
+         /* Test against HSR tile cache */ \
+         fxMesa->stats.hsrTileTests++; \
+         if (fxHSRTestFragment(fxMesa, (GLint)centerX, (GLint)centerY, minZ)) { \
+            grDrawTriangle( a, b, c ); \
+            /* Update tile cache with this triangle's depth */ \
+            fxMesa->stats.hsrTileUpdates++; \
+            fxHSRUpdateTile(fxMesa, (GLint)centerX, (GLint)centerY, minZ); \
+         } else { \
+            fxMesa->stats.hsrTrianglesRejected++; \
+         } \
+      } else { \
+         grDrawTriangle( a, b, c ); \
+      } \
+   } \
 } while (0)					\
 
 #define QUAD( a, b, c, d )			\
