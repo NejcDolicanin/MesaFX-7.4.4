@@ -164,84 +164,89 @@ int ReadRefreshFromRegistry(void)
 //     return 0;
 // }
 
-static int ScanFileForPatterns(const char *filePath,
-                               const char *patternA, size_t patternALen,
-                               const char *patternB, size_t patternBLen)
+static int HasPk3FilesInDir(const char *dirPath)
 {
-    HANDLE hFile, hMap;
-    BYTE *data;
-    DWORD fileSize, i;
-    size_t maxLen;
-    int foundA = 0;
-    int foundB = 0;
+    char searchPath[MAX_PATH];
+    WIN32_FIND_DATAA findData;
+    HANDLE hFind;
 
-    if (!filePath || !filePath[0])
+    if (!dirPath || !dirPath[0])
         return 0;
 
-    hFile = CreateFileA(filePath, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
-    if (hFile == INVALID_HANDLE_VALUE)
+    snprintf(searchPath, sizeof(searchPath), "%s\\*.pk3", dirPath);
+    hFind = FindFirstFileA(searchPath, &findData);
+    if (hFind == INVALID_HANDLE_VALUE)
         return 0;
 
-    fileSize = GetFileSize(hFile, NULL);
-    maxLen = (patternALen > patternBLen) ? patternALen : patternBLen;
-    if (fileSize == INVALID_FILE_SIZE || fileSize < maxLen)
+    do
     {
-        CloseHandle(hFile);
-        return 0;
-    }
-
-    hMap = CreateFileMapping(hFile, NULL, PAGE_READONLY, 0, 0, NULL);
-    if (!hMap)
-    {
-        CloseHandle(hFile);
-        return 0;
-    }
-
-    data = (BYTE *)MapViewOfFile(hMap, FILE_MAP_READ, 0, 0, 0);
-    if (!data)
-    {
-        CloseHandle(hMap);
-        CloseHandle(hFile);
-        return 0;
-    }
-
-    for (i = 0; i < fileSize; i++)
-    {
-        if (!foundA && i + patternALen <= fileSize && memcmp(data + i, patternA, patternALen) == 0)
+        if (!(findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
         {
-            foundA = 1;
+            FindClose(hFind);
+            return 1;
         }
-        if (!foundB && i + patternBLen <= fileSize && memcmp(data + i, patternB, patternBLen) == 0)
-        {
-            foundB = 1;
-        }
-        if (foundA && foundB)
-        {
-            break;
-        }
-    }
+    } while (FindNextFileA(hFind, &findData));
 
-    UnmapViewOfFile(data);
-    CloseHandle(hMap);
-    CloseHandle(hFile);
+    FindClose(hFind);
+    return 0;
+}
 
-    return (foundA && foundB) ? 1 : 0;
+static int HasPk3FilesNearExe(const char *exePath)
+{
+    char exeDir[MAX_PATH];
+    char searchPath[MAX_PATH];
+    char subDirPath[MAX_PATH];
+    char *lastSlash;
+    WIN32_FIND_DATAA findData;
+    HANDLE hFind;
+
+    if (!exePath || !exePath[0])
+        return 0;
+
+    strncpy(exeDir, exePath, sizeof(exeDir) - 1);
+    exeDir[sizeof(exeDir) - 1] = '\0';
+    lastSlash = strrchr(exeDir, '\\');
+    if (!lastSlash)
+        return 0;
+    *lastSlash = '\0';
+
+    if (HasPk3FilesInDir(exeDir))
+        return 1;
+
+    snprintf(searchPath, sizeof(searchPath), "%s\\*", exeDir);
+    hFind = FindFirstFileA(searchPath, &findData);
+    if (hFind == INVALID_HANDLE_VALUE)
+        return 0;
+
+    do
+    {
+        if (findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+        {
+            if (strcmp(findData.cFileName, ".") == 0 || strcmp(findData.cFileName, "..") == 0)
+                continue;
+
+            snprintf(subDirPath, sizeof(subDirPath), "%s\\%s", exeDir, findData.cFileName);
+            if (HasPk3FilesInDir(subDirPath))
+            {
+                FindClose(hFind);
+                return 1;
+            }
+        }
+    } while (FindNextFileA(hFind, &findData));
+
+    FindClose(hFind);
+    return 0;
 }
 
 /* Detects if the current process is a Quake 3 (id Tech 3) engine game.
- * Searches for "GetRefAPI" string in the executable or loaded renderer DLLs.
+ * Uses presence of .pk3 data packs in the executable directory or its
+ * immediate subdirectories as a heuristic.
  * Returns 1 if detected, 0 otherwise. Result is cached after first call.
  */
 int DetectQuake3Engine(void)
 {
     static int cached_result = -1;
     char exePath[MAX_PATH];
-    const char *patternA = "GetRefAPI";
-    const char *patternB = "RE_BeginRegistration";
-    const size_t patternALen = strlen(patternA);
-    const size_t patternBLen = strlen(patternB);
-    HANDLE snapshot;
-    MODULEENTRY32 moduleEntry;
 
     /* Return cached result if already computed */
     if (cached_result >= 0)
@@ -249,35 +254,14 @@ int DetectQuake3Engine(void)
 
     cached_result = 0;
 
-    /* Check the main executable first */
     if (GetModuleFileName(NULL, exePath, MAX_PATH) != 0)
     {
-        if (ScanFileForPatterns(exePath, patternA, patternALen, patternB, patternBLen))
+        if (HasPk3FilesNearExe(exePath))
         {
             cached_result = 1;
-            return cached_result;
         }
     }
 
-    /* Scan loaded modules (renderer DLLs often contain GetRefAPI) */
-    snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, GetCurrentProcessId());
-    if (snapshot == INVALID_HANDLE_VALUE)
-        return cached_result;
-
-    moduleEntry.dwSize = sizeof(MODULEENTRY32);
-    if (Module32First(snapshot, &moduleEntry))
-    {
-        do
-        {
-            if (ScanFileForPatterns(moduleEntry.szExePath, patternA, patternALen, patternB, patternBLen))
-            {
-                cached_result = 1;
-                break;
-            }
-        } while (Module32Next(snapshot, &moduleEntry));
-    }
-
-    CloseHandle(snapshot);
     return cached_result;
 }
 
