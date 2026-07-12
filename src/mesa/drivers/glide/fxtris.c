@@ -1595,6 +1595,13 @@ static void fxRunPipeline( GLcontext *ctx )
    fxMesaContext fxMesa = FX_CONTEXT(ctx);
    GLuint new_gl_state = fxMesa->new_gl_state;
 
+   /* Nejc: the glide context is lost (alt-tab); nothing may reach glide
+    * until fxMesaRestoreGlideContext has run - glide3x's own lost-context
+    * guard in the retail draw path crashes on incoming triangles. State
+    * stays dirty and is fully revalidated after the restore. */
+   if (glbGlideLost)
+      return;
+
    if (TDFX_DEBUG & VERBOSE_PIPELINE) {
       fprintf(stderr, "fxRunPipeline()\n");
    }

@@ -170,6 +170,10 @@ static void fxDDClear( GLcontext *ctx, GLbitfield mask )
    const FxU32 clearD = (FxU32) (ctx->DrawBuffer->_DepthMaxF * ctx->Depth.Clear);
    const FxU8 clearS = (FxU8) (ctx->Stencil.Clear & 0xff);
 
+   /* Nejc: glide context lost (alt-tab); don't touch the hardware */
+   if (glbGlideLost)
+      return;
+
    if ( TDFX_DEBUG & MESA_VERBOSE ) {
       fprintf( stderr, "fxDDClear\n");
    }

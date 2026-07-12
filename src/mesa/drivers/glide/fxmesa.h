@@ -85,6 +85,10 @@ GLAPI void GLAPIENTRY fxMesaSetNearFar(GLfloat nearVal, GLfloat farVal);
 
 GLAPI void GLAPIENTRY fxMesaUpdateScreenSize(fxMesaContext ctx);
 
+/* Nejc: alt-tab recovery - reopen the lost Glide window and restore all hardware state; 
+ * called lazily from wglSwapBuffers once the game window is active in the foreground again */
+GLAPI GLboolean GLAPIENTRY fxMesaRestoreGlideContext(fxMesaContext ctx);
+
 GLAPI void GLAPIENTRY fxCloseHardware(void);
 
 GLAPI void GLAPIENTRY fxGetScreenGeometry (GLint *w, GLint *h);

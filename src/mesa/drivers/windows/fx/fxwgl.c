@@ -267,15 +267,24 @@ static int curPFD = 0;
 static HDC hDC;
 static HWND hWND;
 
-/* focus / restore handling */
-static int fxwgl_is_suspended = 0;
-static int fxwgl_in_restore = 0;
-static int fxwgl_needs_restore = 0;
+/* Nejc: focus / alt-tab restore handling.
+ *
+ * fxwgl_needs_restore ("armed") mirrors exactly the triggers glide3x's own
+ * window hook uses to set its internal lost-context flag (WM_ACTIVATEAPP
+ * FALSE, minimize). So armed <=> glide considers the context lost and is
+ * ignoring every call. The actual restore happens lazily in
+ * wglSwapBuffers, on the render thread, once the window is fully active
+ * again - never from inside the winproc while a switch is in progress. */
 static int fxwgl_is_minimized = 0;
 static int fxwgl_has_focus = 0;
-static int fxwgl_is_foreground = 0;
-static int fxwgl_want_suspend = 0;
-static int fxwgl_want_resume = 0;
+static int fxwgl_needs_restore = 0;  /* armed: glide lost the context */
+static int fxwgl_in_restore = 0;     /* re-entry guard: restore may pump messages */
+static int fxwgl_gamma_saved = 0;    /* app gave us a gamma ramp we can re-apply */
+static int fxwgl_deactivate_seq = 0; /* bumped on every deactivation trigger; a
+                                      * restore only disarms if no new trigger
+                                      * arrived while it was running (grSstWinOpen
+                                      * pumps messages - rapid alt-tab can
+                                      * deactivate us mid-restore) */
 
 /* Nejc: Debug logging */
 /*
@@ -301,7 +310,7 @@ static void fxDebugLog(const char *format, ...)
       fflush(debugLog);
    }
 }
-   */
+*/
 /* END DEBUG LOG */
 
 /* For the in-window-rendering hack */
@@ -324,6 +333,8 @@ env_check (const char *var, int val)
    return (env && (env[0] == val));
 }
 
+GLAPI BOOL GLAPIENTRY wglSetDeviceGammaRamp3DFX (HDC hdc, LPVOID arrays);
+
 static LRESULT APIENTRY
 __wglMonitor (HWND hwnd, UINT message, UINT wParam, LONG lParam)
 {
@@ -336,18 +347,23 @@ __wglMonitor (HWND hwnd, UINT message, UINT wParam, LONG lParam)
          case WM_MOVE:
             break;
          case WM_DISPLAYCHANGE:
-            /* Simplified event marker: Resolution change (not during Alt-Tab) */
-            /*
-            if (!fxwgl_is_minimized) {
-               fxDebugLog(">>> EVENT: Resolution change detected\n");
-            }
-               */
             break;
          case WM_SIZE:
             if (wParam == SIZE_MINIMIZED) {
                fxwgl_is_minimized = 1;
+               /* glide sets its lost-context flag on minimize too
+                * (WINXP_SAFER_ALT_TAB_FIX); arm the restore and block
+                * rendering NOW - the game may still be mid-frame and
+                * glide crashes on draws once its lost flag is set */
+               fxwgl_deactivate_seq++;
+               glbGlideLost = 1;
+               if (!fxwgl_needs_restore) {
+                  fxwgl_needs_restore = 1;
+                  /* fxDebugLog(">>> EVENT: minimized -> restore armed\n"); */
+               }
             } else if (wParam == SIZE_RESTORED) {
                fxwgl_is_minimized = 0;
+               /* fxDebugLog(">>> EVENT: window restored\n"); */
             }
 #if 0
             if (wParam != SIZE_MINIMIZED) {
@@ -371,26 +387,42 @@ __wglMonitor (HWND hwnd, UINT message, UINT wParam, LONG lParam)
 #endif
             break;
          case WM_ACTIVATE:
-            /* Simplified event marker: Alt-Tab SUSPEND */
-            /*
-            if (LOWORD(wParam) == WA_INACTIVE && HIWORD(wParam) != 0) {
-               fxDebugLog(">>> EVENT: Alt-Tab SUSPEND detected\n");
-            }
-            */
             if (LOWORD(wParam) == WA_INACTIVE) {
                fxwgl_has_focus = 0;
+               /* fxDebugLog(">>> EVENT: WM_ACTIVATE inactive (minimized=%d)\n",
+                          HIWORD(wParam) != 0); */
             } else if (LOWORD(wParam) == WA_ACTIVE || LOWORD(wParam) == WA_CLICKACTIVE) {
                fxwgl_has_focus = 1;
-               
-               /* Simplified event marker: Alt-Tab RESUME */
-               /*
-               if (fxwgl_is_minimized) {
-                  fxDebugLog(">>> EVENT: Alt-Tab RESUME detected\n");
+               /* fxDebugLog(">>> EVENT: WM_ACTIVATE active (needs_restore=%d, minimized=%d)\n",
+                          fxwgl_needs_restore, fxwgl_is_minimized); */
+            }
+            break;
+         case WM_ACTIVATEAPP:
+            /* this is the message glide's own hook keys on to set its
+             * lost-context flag; mirror it to arm the restore and block
+             * rendering before the rest of the frame's draws hit glide */
+            if (wParam == FALSE) {
+               fxwgl_deactivate_seq++;
+               glbGlideLost = 1;
+               if (!fxwgl_needs_restore) {
+                  fxwgl_needs_restore = 1;
+                  /* fxDebugLog(">>> EVENT: WM_ACTIVATEAPP FALSE -> restore armed\n"); */
                }
-                  */
+            } else {
+               /* fxDebugLog(">>> EVENT: WM_ACTIVATEAPP TRUE\n"); */
             }
             break;
          case WM_SHOWWINDOW:
+            /* glide's hook also sets its lost flag when the window is
+             * hidden (WINXP_SAFER_ALT_TAB_FIX); mirror it */
+            if (wParam == FALSE) {
+               fxwgl_deactivate_seq++;
+               glbGlideLost = 1;
+               if (!fxwgl_needs_restore) {
+                  fxwgl_needs_restore = 1;
+                  /* fxDebugLog(">>> EVENT: WM_SHOWWINDOW FALSE -> restore armed\n"); */
+               }
+            }
             break;
          case WM_SYSKEYDOWN:
             break;
@@ -501,6 +533,13 @@ wglCreateContext (HDC hdc)
    hDC = hdc;
    hWND = hWnd;
 
+   /* Nejc: a truly new context is authoritative - grSstWinOpen just
+    * cleared glide's lost-context flag, so a pending alt-tab restore
+    * would only cause a needless mode-set. This is the path in-game
+    * resolution changes / vid_restarts take; it must stay untouched. */
+   fxwgl_needs_restore = 0;
+   fxwgl_in_restore = 0;
+
    /* Simplified event marker: Game video restarted */
    context_count++;
    if (context_count > 1) {
@@ -535,6 +574,12 @@ wglDeleteContext (HGLRC hglrc)
 
       ctx = NULL;
       hDC = 0;
+
+      /* Nejc: no context, nothing left to restore */
+      fxwgl_needs_restore = 0;
+      fxwgl_in_restore = 0;
+      glbGlideLost = 0;
+
       /* fxDebugLog("wglDeleteContext: EXIT - SUCCESS\n"); */
       return TRUE;
    }
@@ -603,8 +648,22 @@ wglSetDeviceGammaRamp3DFX (HDC hdc, LPVOID arrays)
 
    /* gammaTable should be per-context */
    memcpy(gammaTable, arrays, 3 * 256 * sizeof(GLushort));
+   fxwgl_gamma_saved = 1;
+
+   /* Nejc: games restore the desktop gamma from their deactivate handler
+    * (e.g. Quake3 on WM_ACTIVATE) - at that point the glide context is
+    * already lost, so don't call glide at all; the saved ramp is
+    * re-applied after fxMesaRestoreGlideContext */
+   if (glbGlideLost) {
+      return TRUE;
+   }
 
    tableSize = FX_grGetInteger(GR_GAMMA_TABLE_ENTRIES);
+   if (tableSize <= 0 || tableSize > 256) {
+      /* glide couldn't answer (context lost mid-call?); don't divide by
+       * zero / program a garbage table */
+      return TRUE;
+   }
    inc = 256 / tableSize;
    red = (GLushort *)arrays;
    green = (GLushort *)arrays + 256;
@@ -1420,10 +1479,70 @@ wglSwapBuffers (HDC hdc)
 
    /* Only log when state changes */
    if (fxwgl_has_focus != last_has_focus || fxwgl_is_minimized != last_is_minimized) {
-      /* fxDebugLog("wglSwapBuffers: State changed - has_focus=%d, minimized=%d\n", 
-                 fxwgl_has_focus, fxwgl_is_minimized); */
+      /* fxDebugLog("wglSwapBuffers: State changed - has_focus=%d, minimized=%d, needs_restore=%d\n",
+                 fxwgl_has_focus, fxwgl_is_minimized, fxwgl_needs_restore); */
       last_has_focus = fxwgl_has_focus;
       last_is_minimized = fxwgl_is_minimized;
+   }
+
+   /* Nejc: Alt-Tab recovery. When the app is deactivated, glide sets its
+    * lost-context flag (its own window hook keys on the very same
+    * messages that armed fxwgl_needs_restore) and from then on ignores
+    * all rendering calls; nothing ever clears the flag except a new
+    * grSstWinOpen. So once armed, restore lazily from here - the render
+    * thread - and only after a full message-serialized round trip: the
+    * game's message pump processed WA_ACTIVE / SIZE_RESTORED again AND
+    * the window really is the foreground window right now. While the
+    * switch is still in progress (window minimizing, focus not settled,
+    * rapid alt-tab bouncing) do nothing at all - don't even swap; glide
+    * ignores everything anyway and the desktop owns the display.
+    *
+    * This never fires during in-game resolution / fullscreen-windowed
+    * changes: those recreate the whole GL context, and wglCreateContext
+    * disarms us. */
+   if (fxwgl_needs_restore) {
+      if (fxwgl_in_restore) {
+         /* re-entered while restoring (restore may pump messages) */
+         return TRUE;
+      }
+      if (!fxwgl_has_focus || fxwgl_is_minimized
+          || GetForegroundWindow() != hWND || IsIconic(hWND)) {
+         /* mid-switch: do nothing until the window is truly back */
+         return TRUE;
+      }
+
+      fxwgl_in_restore = 1;
+      /* fxDebugLog("wglSwapBuffers: window is back, restoring glide context...\n"); */
+      {
+         /* grSstWinOpen pumps messages: a rapid alt-tab can deactivate us
+          * again while the restore runs. Only disarm if that didn't
+          * happen; otherwise close the gate again and let the next
+          * activation retry. */
+         int seq_before = fxwgl_deactivate_seq;
+
+         if (fxMesaRestoreGlideContext(ctx)) {
+            if (seq_before == fxwgl_deactivate_seq) {
+               /* fxDebugLog("wglSwapBuffers: restore OK\n"); */
+               fxwgl_needs_restore = 0;
+               if (fxwgl_gamma_saved) {
+                  wglSetDeviceGammaRamp3DFX(hdc, gammaTable);
+               }
+            } else {
+               /* fxDebugLog("wglSwapBuffers: deactivated during restore - staying armed\n"); */
+               glbGlideLost = 1;   /* the restore cleared it */
+            }
+         } else {
+            /* window may still be mid-transition; stay armed and retry on
+             * a later frame */
+            /* fxDebugLog("wglSwapBuffers: restore FAILED (will retry)\n"); */
+         }
+      }
+      fxwgl_in_restore = 0;
+
+      if (fxwgl_needs_restore) {
+         /* restore didn't complete; don't touch the hardware */
+         return TRUE;
+      }
    }
 
    fxMesaSwapBuffers();

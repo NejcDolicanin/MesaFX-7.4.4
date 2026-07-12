@@ -589,6 +589,18 @@ struct tfxMesaContext
 
    /* Skip combine - Last combine tracking */
    struct gl_texture_object *lastCombineTex[2]; /* one per texture unit */
+
+   /* Nejc: grSstWinOpen parameters saved at context creation so the
+    * context can be re-opened after it is lost (alt-tab away from
+    * fullscreen, see fxMesaRestoreGlideContext). Glide never clears its
+    * lost-context flag by itself; only grSstWinOpen does.
+    * NOTE: kept at the end of the struct so existing field offsets
+    * stay unchanged (old makefiles don't track header dependencies). */
+   FxU32 openWin;
+   GrScreenResolution_t openRes;
+   GrScreenRefresh_t openRef;
+   GrPixelFormat_t openPixFmt;
+   GLboolean openAux;
 };
 
 
@@ -820,5 +832,13 @@ extern int TDFX_DEBUG;
 #define FX_RESCALE_BIG_TEXURES_HACK   0 /* fake textures larger than HW can support */
 #define FX_COMPRESS_S3TC_AS_FXT1_HACK 1 /* map S3TC to FXT1 */
 #define FX_TC_NAPALM 1                  /* map GL_COMPRESSED_RGB[A] to FXT1. Works with VSA100-based cards only. */
+
+/* Nejc: nonzero while the glide context is lost (alt-tab away from
+ * fullscreen) and not yet restored. Set by the fxwgl winproc on the same
+ * triggers glide's own hook uses for its lost flag; cleared by
+ * grSstWinOpen paths in fxapi.c. While set, fxRunPipeline and fxDDClear
+ * must not call into glide (its retail draw path crashes on lost
+ * contexts). Defined in fxapi.c. */
+extern volatile int glbGlideLost;
 
 #endif

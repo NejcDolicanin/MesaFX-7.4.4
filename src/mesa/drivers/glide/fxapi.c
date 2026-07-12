@@ -77,6 +77,14 @@ static int glbTotNumCtx = 0;
 static GrHwConfiguration glbHWConfig;
 static int glbCurrentBoard = 0;
 
+/* Nejc: nonzero from the moment an alt-tab deactivation is detected until
+ * fxMesaRestoreGlideContext has reopened the glide window. While set, no
+ * draw/clear may reach glide: glide3x's own lost-context guard in the
+ * retail (asm) draw path is broken and crashes with a breakpoint fault
+ * when a triangle batch comes in after the lost flag is set mid-frame.
+ * Checked in fxRunPipeline (all TNL rendering) and fxDDClear. */
+volatile int glbGlideLost = 0;
+
 
 #if defined(__WIN32__)
 static int
@@ -199,6 +207,10 @@ gl3DfxSetPaletteEXT(GLuint * pal)
 
    if (fxMesa) {
       fxMesa->haveGlobalPaletteTexture = 1;
+
+      /* Nejc: keep a copy so the palette can be re-downloaded after the
+       * Glide context is restored (alt-tab) */
+      memcpy(&fxMesa->glbPalette, pal, sizeof(fxMesa->glbPalette));
 
       grTexDownloadTable(GR_TEXTABLE_PALETTE, (GuTexPalette *) pal);
    }
@@ -692,6 +704,16 @@ fxMesa->keepResidentOnInvalidate = GL_TRUE;
     goto errorhandler;
  }
 
+ /* Nejc: save the open parameters for fxMesaRestoreGlideContext (alt-tab) */
+ fxMesa->openWin = (FxU32) win;
+ fxMesa->openRes = res;
+ fxMesa->openRef = ref;
+ fxMesa->openPixFmt = pixFmt;
+ fxMesa->openAux = aux;
+
+ /* a fresh grSstWinOpen just cleared glide's lost-context flag */
+ glbGlideLost = 0;
+
    /* screen */
    fxMesa->screen_width = FX_grSstScreenWidth();
    fxMesa->screen_height = FX_grSstScreenHeight();
@@ -885,6 +907,178 @@ fxMesaUpdateScreenSize(fxMesaContext fxMesa)
 }
 
 /*
+ * Nejc: Alt-tab recovery ("lazy restore").
+ *
+ * When the game window is deactivated (alt-tab), glide3x sets its internal
+ * lost-context flag - via its own window hook (WM_ACTIVATEAPP FALSE /
+ * minimize, see _XPAltTabProc in the glide sources) and, on Win9x, via the
+ * context DWORD shared with the display driver. From that moment every
+ * glide call is silently ignored, and nothing ever clears the flag except
+ * a new grSstWinOpen. Glide never recovers by itself.
+ *
+ * So when the game comes back we close the dead window and open a fresh
+ * one with the parameters saved at context creation - exactly the same
+ * grSstWinClose/grSstWinOpen plumbing the (working) in-game resolution
+ * change path uses - and then re-apply all hardware state ourselves,
+ * because unlike a real mode change the game does not know anything
+ * happened and will not re-issue its GL setup. Texture memory content
+ * does not survive either, so resident textures are re-downloaded.
+ *
+ * grSstWinClose on a lost context is safe: glide detects the lost state,
+ * skips the FIFO flush and only resets the video / unhooks its winproc.
+ *
+ * Returns GL_FALSE if the re-open failed (window may still be
+ * mid-transition); the caller may retry on a later frame.
+ */
+GLboolean GLAPIENTRY
+fxMesaRestoreGlideContext(fxMesaContext fxMesa)
+{
+   struct tdfx_glide *Glide;
+   GrContext_t newGlideCtx;
+
+   if (!fxMesa)
+      return GL_FALSE;
+
+   /* windowed contexts don't own the display and never lose it;
+    * report success so the caller disarms */
+   if (fxMesa->openRes == GR_RESOLUTION_NONE)
+      return GL_TRUE;
+
+   Glide = &fxMesa->Glide;
+
+   BEGIN_BOARD_LOCK();
+
+   /* the old window is dead (lost context); close it first so open/close
+    * stay balanced inside glide, like on an in-game mode change */
+   if (fxMesa->glideContext) {
+      grSstWinClose(fxMesa->glideContext);
+      fxMesa->glideContext = 0;
+   }
+
+   grSstSelect(fxMesa->board);
+   grEnable(GR_OPENGL_MODE_EXT);
+
+   if (fxMesa->HavePixExt) {
+      newGlideCtx = Glide->grSstWinOpenExt(fxMesa->openWin,
+                                           fxMesa->openRes, fxMesa->openRef,
+                                           GR_COLORFORMAT_ABGR, GR_ORIGIN_LOWER_LEFT,
+                                           fxMesa->openPixFmt,
+                                           2, fxMesa->openAux);
+   } else {
+      newGlideCtx = grSstWinOpen(fxMesa->openWin,
+                                 fxMesa->openRes, fxMesa->openRef,
+                                 GR_COLORFORMAT_ABGR, GR_ORIGIN_LOWER_LEFT,
+                                 2, fxMesa->openAux);
+   }
+   END_BOARD_LOCK();
+
+   if (!newGlideCtx) {
+      return GL_FALSE;
+   }
+   fxMesa->glideContext = newGlideCtx;
+
+   /* the fresh grSstWinOpen cleared glide's lost flag; rendering (and the
+    * state/texture restore below) may reach the hardware again */
+   glbGlideLost = 0;
+
+   /* NOTE: deliberately no grGlideSetState() here. The state mirror in
+    * fxMesa->state is only captured on context switches; single-context
+    * games never populate it, and replaying a stale/zeroed mirror would
+    * program garbage. grSstWinOpen leaves glide at defaults - the same
+    * baseline a fresh context starts from - and the full revalidation
+    * forced below re-emits everything from Mesa's state. */
+
+   /* re-apply the hardware-facing setup normally done in
+    * fxDDInitFxMesaContext */
+   FX_setupGrVertexLayout();
+   fxMesa->stw_hint_state = 0;
+
+   if (fxMesa->colDepth == 32) {
+      Glide->grColorMaskExt(FXTRUE, FXTRUE, FXTRUE, fxMesa->haveHwAlpha);
+   } else {
+      grColorMask(FXTRUE, fxMesa->haveHwAlpha);
+   }
+
+   grRenderBuffer(fxMesa->currentFB);
+
+   if (fxMesa->haveZBuffer) {
+      grDepthBufferMode(GR_DEPTHBUFFER_ZBUFFER);
+   }
+
+   if (!fxMesa->bgrOrder) {
+      grLfbWriteColorFormat(GR_COLORFORMAT_ABGR);
+   }
+
+   if (Glide->grSetNumPendingBuffers != NULL) {
+      Glide->grSetNumPendingBuffers(fxMesa->maxPendingSwapBuffers);
+   }
+
+   if (fxMesa->HaveTexUma) {
+      grEnable(GR_TEXTURE_UMA_EXT);
+   }
+
+   if (fxMesa->glCtx) {
+      grDitherMode(fxMesa->glCtx->Color.DitherFlag ? GR_DITHER_4x4
+                                                   : GR_DITHER_DISABLE);
+   }
+
+   /* the global palette (GLQuake) lives in texture hardware; re-download */
+   if (fxMesa->haveGlobalPaletteTexture) {
+      grTexDownloadTable(GR_TEXTABLE_PALETTE, &fxMesa->glbPalette);
+   }
+
+   /* pick up the (possibly changed) screen size */
+   fxMesaUpdateScreenSize(fxMesa);
+
+   /* re-size the HSR tile cache if the resolution changed */
+   if (fxMesa->hsrEnabled && fxMesa->hsrTileDepth) {
+      GLuint tilesX = (fxMesa->width + fxMesa->hsrTileSize - 1) / fxMesa->hsrTileSize;
+      GLuint tilesY = (fxMesa->height + fxMesa->hsrTileSize - 1) / fxMesa->hsrTileSize;
+      if (tilesX != fxMesa->hsrTilesX || tilesY != fxMesa->hsrTilesY) {
+         GLfloat *newTiles = (GLfloat *) CALLOC(tilesX * tilesY * sizeof(GLfloat));
+         if (newTiles) {
+            GLuint i;
+            FREE(fxMesa->hsrTileDepth);
+            fxMesa->hsrTileDepth = newTiles;
+            fxMesa->hsrTilesX = tilesX;
+            fxMesa->hsrTilesY = tilesY;
+            for (i = 0; i < tilesX * tilesY; i++) {
+               fxMesa->hsrTileDepth[i] = 1.0f;
+            }
+         } else {
+            FREE(fxMesa->hsrTileDepth);
+            fxMesa->hsrTileDepth = NULL;
+            fxMesa->hsrEnabled = GL_FALSE;
+         }
+      }
+   }
+
+   /* texture memory content did not survive: re-download the textures
+    * that are currently bound and mark everything else as swapped out
+    * so it gets re-uploaded on demand */
+   fxTMRestoreTextures_NoLock(fxMesa);
+
+   /* reset the combine guards so the texture units get re-programmed */
+   fxMesa->lastCombineTex[0] = NULL;
+   fxMesa->lastCombineTex[1] = NULL;
+   fxMesa->lastUnitsMode = FX_UM_NONE;
+   fxMesa->tmuSrc = FX_TMU_NONE;
+
+   /* re-activate the Mesa context and force a full state re-validation */
+   if (fxMesa->glCtx) {
+      _mesa_make_current(fxMesa->glCtx, fxMesa->glBuffer, fxMesa->glBuffer);
+      fxSetupDDPointers(fxMesa->glCtx);
+   }
+   fxMesa->new_state = _NEW_ALL;
+   if (!fxMesa->haveHwStencil) {
+      fxMesa->new_state &= ~FX_NEW_STENCIL;
+   }
+   fxMesa->new_gl_state = ~0;
+
+   return GL_TRUE;
+}
+
+/*
  * Destroy the given FX/Mesa context.
  */
 void GLAPIENTRY
@@ -1046,6 +1240,10 @@ fxMesaSwapBuffers(void)
    }
 
    if (fxMesaCurrentCtx) {
+      /* Nejc: glide window closed (failed alt-tab restore) - do nothing */
+      if (fxMesaCurrentCtx->glideContext == 0)
+         return;
+
       _mesa_notifySwapBuffers(fxMesaCurrentCtx->glCtx);
 
       if (fxMesaCurrentCtx->haveDoubleBuffer) {
