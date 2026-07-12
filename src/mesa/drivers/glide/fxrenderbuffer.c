@@ -758,18 +758,18 @@ void fxWriteMonoRGBASpan_RGB565(GLcontext *ctx, struct gl_renderbuffer *rb,
                     ((color[1] & 0xFC) << 3) |
                     (color[2] >> 3);
    GLuint i;
+   GLint fy = fxMesa->height - 1 - y;
 
    if (mask)
    {
       for (i = 0; i < count; i++)
          if (mask[i])
-            grLfbWriteRegion(fxMesa->currentFB, x + i, fxMesa->height - 1 - y,
-                             GR_LFB_SRC_FMT_565, 1, 1, FXFALSE, 2, &pixel);
+            grLfbWriteRegion(fxMesa->currentFB, x + i, fy, GR_LFB_SRC_FMT_565, 1, 1, FXFALSE, 2, &pixel);
    }
    else
    {
-      grLfbWriteRegion(fxMesa->currentFB, x, fxMesa->height - 1 - y,
-                       GR_LFB_SRC_FMT_565, count, 1, FXFALSE, 2, &pixel);
+      for (i = 0; i < count; i++)
+         grLfbWriteRegion(fxMesa->currentFB, x + i, fy, GR_LFB_SRC_FMT_565, 1, 1, FXFALSE, 2, &pixel);
    }
 }
 
