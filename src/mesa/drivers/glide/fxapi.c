@@ -498,13 +498,14 @@ fxMesa->keepResidentOnInvalidate = GL_TRUE;
    }
 
 /* HSR will be initialized after window is opened and dimensions are known */
+/* 
  fxMesa->hsrEnabled = GL_FALSE;
 #ifdef _WIN32
  if ((getenv("MESA_FX_NO_HSR") == NULL) && DetectQuake3Engine()) {
-    fxMesa->hsrEnabled = GL_TRUE;
+   fxMesa->hsrEnabled = GL_TRUE;
  }
 #endif
- fxMesa->hsrTileDepth = NULL;
+*/
 
  /* Determine if we need vertex swapping, RGB order and SLI/AA */
  sliaa = 0;
@@ -745,37 +746,6 @@ fxMesa->keepResidentOnInvalidate = GL_TRUE;
    fxMesa->clipMaxX = fxMesa->width;
    fxMesa->clipMinY = 0;
    fxMesa->clipMaxY = fxMesa->height;
-
-   /* Initialize HSR (Hidden Surface Removal) now that we have screen dimensions */
-   if (fxMesa->hsrEnabled) {
-      fxMesa->hsrTileSize = 16;  /* 16x16 pixel tiles for coarse depth testing */
-      fxMesa->hsrTilesX = (fxMesa->width + fxMesa->hsrTileSize - 1) / fxMesa->hsrTileSize;
-      fxMesa->hsrTilesY = (fxMesa->height + fxMesa->hsrTileSize - 1) / fxMesa->hsrTileSize;
-      fxMesa->hsrTileDepth = (GLfloat *)CALLOC(fxMesa->hsrTilesX * fxMesa->hsrTilesY * sizeof(GLfloat));
-      if (fxMesa->hsrTileDepth) {
-         /* Initialize all tiles to far plane (1.0 in normalized depth) */
-         GLuint i;
-         for (i = 0; i < fxMesa->hsrTilesX * fxMesa->hsrTilesY; i++) {
-            fxMesa->hsrTileDepth[i] = 1.0f;
-         }
-         fprintf(stderr, "Voodoo HSR: Enabled (%dx%d tiles, %dx%d resolution)\n",
-                 fxMesa->hsrTilesX, fxMesa->hsrTilesY,
-                 fxMesa->width, fxMesa->height);
-      } else {
-         fxMesa->hsrEnabled = GL_FALSE;  /* Disable if allocation failed */
-         fprintf(stderr, "Voodoo HSR: Disabled (allocation failed)\n");
-      }
-   } else {
-#ifdef _WIN32
-      if (getenv("MESA_FX_NO_HSR") != NULL) {
-         fprintf(stderr, "Voodoo HSR: Disabled (MESA_FX_NO_HSR set)\n");
-      } else {
-         fprintf(stderr, "Voodoo HSR: Disabled (non-Quake3 engine)\n");
-      }
-#else
-      fprintf(stderr, "Voodoo HSR: Disabled (non-Win32 build)\n");
-#endif
-   }
 
    if (fxMesa->verbose) {
       FxI32 tmuRam, fbRam;
@@ -1048,29 +1018,6 @@ fxMesaRestoreGlideContext(fxMesaContext fxMesa)
    /* pick up the (possibly changed) screen size */
    fxMesaUpdateScreenSize(fxMesa);
 
-   /* re-size the HSR tile cache if the resolution changed */
-   if (fxMesa->hsrEnabled && fxMesa->hsrTileDepth) {
-      GLuint tilesX = (fxMesa->width + fxMesa->hsrTileSize - 1) / fxMesa->hsrTileSize;
-      GLuint tilesY = (fxMesa->height + fxMesa->hsrTileSize - 1) / fxMesa->hsrTileSize;
-      if (tilesX != fxMesa->hsrTilesX || tilesY != fxMesa->hsrTilesY) {
-         GLfloat *newTiles = (GLfloat *) CALLOC(tilesX * tilesY * sizeof(GLfloat));
-         if (newTiles) {
-            GLuint i;
-            FREE(fxMesa->hsrTileDepth);
-            fxMesa->hsrTileDepth = newTiles;
-            fxMesa->hsrTilesX = tilesX;
-            fxMesa->hsrTilesY = tilesY;
-            for (i = 0; i < tilesX * tilesY; i++) {
-               fxMesa->hsrTileDepth[i] = 1.0f;
-            }
-         } else {
-            FREE(fxMesa->hsrTileDepth);
-            fxMesa->hsrTileDepth = NULL;
-            fxMesa->hsrEnabled = GL_FALSE;
-         }
-      }
-   }
-
    /* texture memory content did not survive: re-download the textures
     * that are currently bound and mark everything else as swapped out
     * so it gets re-uploaded on demand */
@@ -1137,17 +1084,6 @@ fxMesaDestroyContext(fxMesaContext fxMesa)
 	      "  # MBs uploaded to texture memory per swapbuffer: %.2f\n",
 	      (fxMesa->stats.memTexUpload /
 	       (float) fxMesa->stats.swapBuffer) / (float) (1 << 20));
-
-      /* HSR Statistics */
-      if (fxMesa->hsrEnabled && fxMesa->stats.hsrTrianglesTotal > 0) {
-         fprintf(stderr, "HSR Stats:\n");
-         fprintf(stderr, "  # triangles submitted: %u\n", fxMesa->stats.hsrTrianglesTotal);
-         fprintf(stderr, "  # triangles rejected by HSR: %u (%.1f%%)\n",
-                 fxMesa->stats.hsrTrianglesRejected,
-                 100.0f * fxMesa->stats.hsrTrianglesRejected / (float)fxMesa->stats.hsrTrianglesTotal);
-         fprintf(stderr, "  # tile tests: %u\n", fxMesa->stats.hsrTileTests);
-         fprintf(stderr, "  # tile updates: %u\n", fxMesa->stats.hsrTileUpdates);
-      }
    }
 
    glbTotNumCtx--;
@@ -1182,12 +1118,6 @@ fxMesaDestroyContext(fxMesaContext fxMesa)
    _mesa_destroy_context(fxMesa->glCtx);
    _mesa_unreference_framebuffer(&fxMesa->glBuffer);
    fxTMClose(fxMesa); /* must be after _mesa_destroy_context */
-
-   /* Free HSR tile cache */
-   if (fxMesa->hsrTileDepth) {
-      FREE(fxMesa->hsrTileDepth);
-      fxMesa->hsrTileDepth = NULL;
-   }
 
    FREE(fxMesa);
 
@@ -1291,11 +1221,6 @@ fxMesaSwapBuffers(void)
       fxMesaCurrentCtx->lastCombineTex[0] = NULL;
       fxMesaCurrentCtx->lastCombineTex[1] = NULL;
       fxMesaCurrentCtx->lastUnitsMode = FX_UM_NONE;
-
-      /* Clear HSR tile cache for new frame */
-      if (fxMesaCurrentCtx->hsrEnabled && fxMesaCurrentCtx->hsrTileDepth) {
-         fxHSRClear(fxMesaCurrentCtx);
-      }
    }
 }
 

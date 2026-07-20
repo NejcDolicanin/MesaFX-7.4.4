@@ -1836,29 +1836,10 @@ fxSetupDepthTest(GLcontext * ctx)
    if (us->depthTestEnabled) {
       grDepthBufferFunction(us->depthTestFunc - GL_NEVER + GR_CMP_NEVER);
       grDepthMask(us->depthMask);
-
-      /* Enable HSR if conditions are met:
-       * - HSR is enabled globally
-       * - Depth testing is active
-       * - Depth writes are enabled
-       * - Alpha blending is disabled (opaque geometry only)
-       * This allows the tile-based depth cache to work effectively
-       * with Quake 3's front-to-back rendering
-       */
-      // if (fxMesa->hsrEnabled && us->depthMask && !us->blendEnabled) {
-      //    // Nejc ToDo - HSR is active
-      //    fxMesa->hsrDepthPassMode = GL_TRUE;
-      // } else {
-      //    // Nejc ToDo - HSR condition not met
-      //    fxMesa->hsrDepthPassMode = GL_FALSE;
-      // }
-      //Nejc Temp... for now just leave this condition enabled if depth testing is enabled and depth writes are enabled, regardless of blending state
-      fxMesa->hsrDepthPassMode = GL_TRUE;
    }
    else {
       grDepthBufferFunction(GR_CMP_ALWAYS);
       grDepthMask(FXFALSE);
-      fxMesa->hsrDepthPassMode = GL_FALSE;
    }
 }
 
@@ -2408,86 +2389,6 @@ fxSetupFXUnits(GLcontext * ctx)
 	 fxSetupCull(ctx);
 
       fxMesa->new_state = 0;
-   }
-}
-
-/************************************************************************/
-/******************** HSR (Hidden Surface Removal) **********************/
-/************************************************************************/
-
-/*
- * Clear all HSR tiles - reset to far plane (1.0)
- * Called at the start of each frame (SwapBuffers)
- */
-void
-fxHSRClear(fxMesaContext fxMesa)
-{
-   if (!fxMesa->hsrEnabled || !fxMesa->hsrTileDepth)
-      return;
-
-   GLuint i;
-   GLuint numTiles = fxMesa->hsrTilesX * fxMesa->hsrTilesY;
-   
-   for (i = 0; i < numTiles; i++) {
-      fxMesa->hsrTileDepth[i] = 1.0f;  /* Far plane */
-   }
-}
-
-/*
- * Test if a fragment should be rendered based on HSR tile cache
- * Returns GL_TRUE if fragment should be rendered, GL_FALSE if hidden
- */
-GLboolean
-fxHSRTestFragment(fxMesaContext fxMesa, GLint x, GLint y, GLfloat z)
-{
-   if (!fxMesa->hsrEnabled || !fxMesa->hsrTileDepth)
-      return GL_TRUE;  /* HSR disabled, render everything */
-
-   /* Calculate tile coordinates */
-   GLuint tileX = x / fxMesa->hsrTileSize;
-   GLuint tileY = y / fxMesa->hsrTileSize;
-   
-   /* Bounds check */
-   if (tileX >= fxMesa->hsrTilesX || tileY >= fxMesa->hsrTilesY)
-      return GL_TRUE;
-   
-   GLuint tileIndex = tileY * fxMesa->hsrTilesX + tileX;
-   GLfloat tileZ = fxMesa->hsrTileDepth[tileIndex];
-   
-   /* In OpenGL depth buffer: smaller Z = closer to camera
-    * If this fragment's Z is GREATER than tile's minimum Z, it's behind something already rendered
-    * Note: ooz in Glide is 1/z, so larger ooz = closer. We need to handle this correctly.
-    */
-   if (z > tileZ) {
-      return GL_FALSE;  /* Fragment is occluded (farther away) */
-   }
-   
-   return GL_TRUE;  /* Fragment is visible (closer or equal) */
-}
-
-/*
- * Update HSR tile depth after rendering a fragment
- * Stores the minimum (closest) Z value for the tile
- */
-void
-fxHSRUpdateTile(fxMesaContext fxMesa, GLint x, GLint y, GLfloat z)
-{
-   if (!fxMesa->hsrEnabled || !fxMesa->hsrTileDepth)
-      return;
-
-   /* Calculate tile coordinates */
-   GLuint tileX = x / fxMesa->hsrTileSize;
-   GLuint tileY = y / fxMesa->hsrTileSize;
-   
-   /* Bounds check */
-   if (tileX >= fxMesa->hsrTilesX || tileY >= fxMesa->hsrTilesY)
-      return;
-   
-   GLuint tileIndex = tileY * fxMesa->hsrTilesX + tileX;
-   
-   /* Update tile with minimum (closest) Z value */
-   if (z < fxMesa->hsrTileDepth[tileIndex]) {
-      fxMesa->hsrTileDepth[tileIndex] = z;
    }
 }
 

@@ -337,12 +337,6 @@ typedef struct
    GLuint reqTexUpload;
    GLuint texUpload;
    GLuint memTexUpload;
-   
-   /* HSR statistics */
-   GLuint hsrTrianglesTotal;     /* Total triangles submitted */
-   GLuint hsrTrianglesRejected;  /* Triangles rejected by HSR */
-   GLuint hsrTileTests;          /* Number of tile tests performed */
-   GLuint hsrTileUpdates;        /* Number of tile updates */
 }
 tfxStats;
 
@@ -570,11 +564,6 @@ struct tfxMesaContext
     * Implements early-Z occlusion culling using coarse tile-based depth buffer
     */
    GLboolean hsrEnabled;
-   GLuint hsrTileSize;          /* Tile size (8, 16, or 32 pixels) */
-   GLuint hsrTilesX;            /* Number of tiles horizontally */
-   GLuint hsrTilesY;            /* Number of tiles vertically */
-   GLfloat *hsrTileDepth;       /* Per-tile minimum Z values */
-   GLboolean hsrDepthPassMode;  /* TRUE when doing depth-only pre-pass */
 
    GrContext_t glideContext;
 
@@ -793,11 +782,6 @@ void fxSetupDepthTest (GLcontext *ctx);
 void fxSetupTexture (GLcontext *ctx);
 void fxSetupStencil (GLcontext *ctx);
 void fxSetupStencilFace (GLcontext *ctx, GLint face);
-
-/* HSR (Hidden Surface Removal) functions */
-void fxHSRClear(fxMesaContext fxMesa);
-GLboolean fxHSRTestFragment(fxMesaContext fxMesa, GLint x, GLint y, GLfloat z);
-void fxHSRUpdateTile(fxMesaContext fxMesa, GLint x, GLint y, GLfloat z);
 
 /* Flags for software fallback cases */
 #define FX_FALLBACK_TEXTURE_MAP		0x0001

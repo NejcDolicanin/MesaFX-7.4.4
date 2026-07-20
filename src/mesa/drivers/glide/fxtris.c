@@ -86,37 +86,8 @@ static GLenum reduced_prim[GL_POLYGON+1] = {
 do {						\
    if (DO_FALLBACK)				\
       fxMesa->draw_tri( fxMesa, a, b, c );	\
-   else	{					\
-      /* HSR: Test triangle against tile cache for early rejection */ \
-      if (fxMesa->hsrEnabled && fxMesa->hsrDepthPassMode && fxMesa->hsrTileDepth) { \
-         fxMesa->stats.hsrTrianglesTotal++; \
-         /* Test all geometry - alpha test happens AFTER depth test in hardware */ \
-         /* Calculate triangle bounding box center and min Z */ \
-         GLfloat centerX = (a->x + b->x + c->x) / 3.0f; \
-         GLfloat centerY = (a->y + b->y + c->y) / 3.0f; \
-         GLfloat minZ = a->ooz; \
-         if (b->ooz < minZ) minZ = b->ooz; \
-         if (c->ooz < minZ) minZ = c->ooz; \
-         /* Test against HSR tile cache */ \
-         fxMesa->stats.hsrTileTests++; \
-         if (fxHSRTestFragment(fxMesa, (GLint)centerX, (GLint)centerY, minZ)) { \
-            /* Update tile cache with this triangle's depth */ \
-            fxMesa->stats.hsrTileUpdates++; \
-            fxHSRUpdateTile(fxMesa, (GLint)centerX, (GLint)centerY, minZ); \
-         } else { \
-            fxMesa->stats.hsrTrianglesRejected++; \
-         } \
-         /* Nejc: draw REGARDLESS of the test result for now. The depth \
-          * compare is scale-inverted (tiles init to 1.0 "far" but ooz is \
-          * 0..65535 with larger = closer): the stats showed 100% of tested \
-          * triangles rejected and zero tile updates ever - surfaces went \
-          * randomly black and stayed black while the view was static. \
-          * Stats keep running so a fixed formula can be validated later. */ \
-         grDrawTriangle( a, b, c ); \
-      } else { \
-         grDrawTriangle( a, b, c ); \
-      } \
-   } \
+   else					\
+     grDrawTriangle( a, b, c );	\
 } while (0)					\
 
 #define QUAD( a, b, c, d )			\
@@ -2124,9 +2095,6 @@ fxMultipass_Trilinear (GLcontext *ctx, GLuint pass)
                       ;
                 }
              }
-
-             /* driver-side HSR would reject this equal-depth re-rasterization */
-             fxMesa->hsrDepthPassMode = GL_FALSE;
              break;
         }
         case 2: /* 2nd pass (last): restore from untouched authoritative state */
