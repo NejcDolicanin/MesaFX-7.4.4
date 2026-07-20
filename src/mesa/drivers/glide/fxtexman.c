@@ -224,7 +224,13 @@ fxTMFindStartAddr(fxMesaContext fxMesa, GLint tmu, int size)
       }
       obj = fxTMFindOldestObject(fxMesa, tmu);
       if (!obj) {
-	 fprintf(stderr, "fxTMFindStartAddr: ERROR: No space for texture\n");
+	 /* Nejc: this failure leaves the caller with a bogus (-1) start
+	  * address - the texture will render black/garbage until a later
+	  * eviction/reload cycle. Print enough to correlate with visible
+	  * black surfaces. */
+	 fprintf(stderr, "fxTMFindStartAddr: ERROR: No space for texture "
+	                 "(tmu %ld, %d bytes, free %u)\n",
+	                 (long)tmu, size, (unsigned)fxMesa->freeTexMem[tmu]);
 	 return -1;
       }
       fxTMMoveOutTM(fxMesa, obj);
@@ -421,6 +427,12 @@ fxTMMoveInTM_NoLock(fxMesaContext fxMesa, struct gl_texture_object *tObj,
       else {
 	 if (ti->whichTMU == FX_TMU_BOTH)
 	    return;
+	 /* Nejc: upgrading a single-TMU residency to FX_TMU_BOTH used to
+	  * overwrite ti->tm[] below without freeing the existing range,
+	  * orphaning texture memory for the rest of the session (the pool
+	  * has no compaction). Evict first - the BOTH case re-uploads both
+	  * copies anyway, so this costs nothing extra. */
+	 fxTMMoveOutTM_NoLock(fxMesa, tObj);
 	 where = FX_TMU_BOTH;
       }
    }
@@ -438,6 +450,19 @@ fxTMMoveInTM_NoLock(fxMesaContext fxMesa, struct gl_texture_object *tObj,
       texmemsize = (int)grTexTextureMemRequired(GR_MIPMAPLEVELMASK_BOTH, &(ti->info));
       ti->tm[where] = fxTMAddObj(fxMesa, tObj, where, texmemsize);
       fxMesa->stats.memTexUpload += texmemsize;
+
+      /* Nejc: allocation can fail (memory full, nothing evictable). Fail
+       * soft: a non-resident texture renders wrong for a frame, but
+       * downloading to a bogus address (NULL deref reads garbage on Win9x,
+       * it does NOT crash) would overwrite OTHER textures' memory - that
+       * shows up as random surfaces turning black until reloaded. */
+      if (!ti->tm[where]) {
+	 fprintf(stderr, "fxTMMoveInTM_NoLock: ERROR: alloc failed (tmu %d, %d bytes)\n",
+	                 (int)where, texmemsize);
+	 ti->whichTMU = FX_TMU_NONE;
+	 ti->isInTM = GL_FALSE;
+	 return;
+      }
 
       for (i = FX_largeLodValue(ti->info), l = ti->minLevel;
 	   i <= FX_smallLodValue(ti->info); i++, l++) {
@@ -462,6 +487,22 @@ fxTMMoveInTM_NoLock(fxMesaContext fxMesa, struct gl_texture_object *tObj,
       texmemsize = (int)grTexTextureMemRequired(GR_MIPMAPLEVELMASK_EVEN, &(ti->info));
       ti->tm[FX_TMU1] = fxTMAddObj(fxMesa, tObj, FX_TMU1, texmemsize);
       fxMesa->stats.memTexUpload += texmemsize;
+
+      /* Nejc: fail soft on allocation failure - see the FX_TMU0 case */
+      if (!ti->tm[FX_TMU0] || !ti->tm[FX_TMU1]) {
+	 fprintf(stderr, "fxTMMoveInTM_NoLock: ERROR: split alloc failed\n");
+	 if (ti->tm[FX_TMU0]) {
+	    fxTMRemoveRange(fxMesa, FX_TMU0, ti->tm[FX_TMU0]);
+	    ti->tm[FX_TMU0] = NULL;
+	 }
+	 if (ti->tm[FX_TMU1]) {
+	    fxTMRemoveRange(fxMesa, FX_TMU1, ti->tm[FX_TMU1]);
+	    ti->tm[FX_TMU1] = NULL;
+	 }
+	 ti->whichTMU = FX_TMU_NONE;
+	 ti->isInTM = GL_FALSE;
+	 return;
+      }
 
       for (i = FX_largeLodValue(ti->info), l = ti->minLevel;
 	   i <= FX_smallLodValue(ti->info); i++, l++) {
@@ -498,6 +539,22 @@ fxTMMoveInTM_NoLock(fxMesaContext fxMesa, struct gl_texture_object *tObj,
       ti->tm[FX_TMU1] = fxTMAddObj(fxMesa, tObj, FX_TMU1, texmemsize);
       fxMesa->stats.memTexUpload += texmemsize;
 
+      /* Nejc: fail soft on allocation failure - see the FX_TMU0 case */
+      if (!ti->tm[FX_TMU0] || !ti->tm[FX_TMU1]) {
+	 fprintf(stderr, "fxTMMoveInTM_NoLock: ERROR: dual alloc failed\n");
+	 if (ti->tm[FX_TMU0]) {
+	    fxTMRemoveRange(fxMesa, FX_TMU0, ti->tm[FX_TMU0]);
+	    ti->tm[FX_TMU0] = NULL;
+	 }
+	 if (ti->tm[FX_TMU1]) {
+	    fxTMRemoveRange(fxMesa, FX_TMU1, ti->tm[FX_TMU1]);
+	    ti->tm[FX_TMU1] = NULL;
+	 }
+	 ti->whichTMU = FX_TMU_NONE;
+	 ti->isInTM = GL_FALSE;
+	 return;
+      }
+
       for (i = FX_largeLodValue(ti->info), l = ti->minLevel;
 	   i <= FX_smallLodValue(ti->info); i++, l++) {
 	 struct gl_texture_image *texImage = tObj->Image[0][l];
@@ -532,6 +589,15 @@ fxTMMoveInTM_NoLock(fxMesaContext fxMesa, struct gl_texture_object *tObj,
    fxMesa->stats.texUpload++;
 
    ti->isInTM = GL_TRUE;
+
+   /* Nejc: black-surface hunt - residency event trail (ungated on purpose,
+    * remove when the bug is found) */
+   fprintf(stderr, "[tex] f=%u in   name=%d tmu=%d a0=%d a1=%d fmt=%d lod=%d/%d\n",
+           (unsigned)fxMesa->frame_no, tObj->Name, (int)ti->whichTMU,
+           ti->tm[FX_TMU0] ? (int)ti->tm[FX_TMU0]->startAddr : -1,
+           ti->tm[FX_TMU1] ? (int)ti->tm[FX_TMU1]->startAddr : -1,
+           (int)ti->info.format,
+           (int)FX_largeLodValue(ti->info), (int)FX_smallLodValue(ti->info));
 }
 
 
@@ -678,11 +744,25 @@ fxTMReloadSubMipMapLevel(fxMesaContext fxMesa,
       exit(-1);
    }
 
-   /* Ensure residency only if needed */
+   /* Ensure residency. Two traps here:
+    * - ti->tm[] may only be indexed with FX_TMU0/1; whichTMU can also be
+    *   SPLIT(98)/BOTH(99)/NONE(100), which read out of bounds
+    * - an evicted texture has whichTMU == FX_TMU_NONE; passing that to
+    *   fxTMMoveInTM used to hit its INTERNAL ERROR exit.
+    * If the texture is not resident (texture-memory churn can evict it
+    * between bind and subimage), just re-place it and return: the full
+    * upload already contains this subimage, Mesa updated texImage->Data
+    * before calling the driver. */
    tmu = (int) ti->whichTMU;
-   if (!ti->isInTM || ti->tm[tmu] == NULL)
-   {
-      fxTMMoveInTM(fxMesa, tObj, tmu);
+   if (!ti->isInTM) {
+      fxTMMoveInTM(fxMesa, tObj, FX_TMU0);
+      return;
+   }
+   if ((tmu == FX_TMU0 || tmu == FX_TMU1) && (ti->tm[tmu] == NULL)) {
+      ti->isInTM = GL_FALSE;
+      ti->whichTMU = FX_TMU_NONE;
+      fxTMMoveInTM(fxMesa, tObj, FX_TMU0);
+      return;
    }
 
    /* Compute lod level consistent with full uploads */
@@ -797,6 +877,10 @@ fxTMMoveOutTM(fxMesaContext fxMesa, struct gl_texture_object *tObj)
    if (!ti->isInTM)
       return;
 
+   /* Nejc: black-surface hunt - residency event trail */
+   fprintf(stderr, "[tex] f=%u out  name=%d tmu=%d\n",
+           (unsigned)fxMesa->frame_no, tObj->Name, (int)ti->whichTMU);
+
    switch (ti->whichTMU) {
    case FX_TMU0:
    case FX_TMU1:
@@ -815,6 +899,10 @@ fxTMMoveOutTM(fxMesaContext fxMesa, struct gl_texture_object *tObj)
 
    ti->isInTM = GL_FALSE;
    ti->whichTMU = FX_TMU_NONE;
+   /* Nejc: the freed range nodes now live in the allocator's free list and
+    * get mutated there - never leave dangling pointers to them */
+   ti->tm[FX_TMU0] = NULL;
+   ti->tm[FX_TMU1] = NULL;
 }
 
 void

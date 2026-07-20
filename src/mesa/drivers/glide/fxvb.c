@@ -763,6 +763,17 @@ void fxChooseVertexState( GLcontext *ctx )
       ind |= SETUP_TMU0;
       fxMesa->tmu_source[0] = 1;
       fxMesa->tmu_source[1] = 0;
+
+      /* Nejc: two-pass trilinear with the lightmap-first unit binding
+       * (Quake3 keeps the lightmap on unit 0 and the base on unit 1): the
+       * base texture must sit on upstream TMU1 (see
+       * fxSetupTrilinearPass1DualNapalm_NoLock), so the units map straight
+       * through instead of the usual crossed mapping. */
+      if ((ctx->Texture._EnabledUnits & 0x1) &&
+          fxMesa->trilinearActive && (fxMesa->trilinearBaseUnit == 1)) {
+         fxMesa->tmu_source[0] = 0;
+         fxMesa->tmu_source[1] = 1;
+      }
    }
    else if (ctx->Texture._EnabledUnits & 0x1) {
       ind |= SETUP_TMU0;

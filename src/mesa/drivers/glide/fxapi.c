@@ -462,6 +462,24 @@ fxMesaCreateContext(GLuint win,
 /* Defaults enabled: keep textures resident on invalidate */
 fxMesa->keepResidentOnInvalidate = GL_TRUE;
 
+/* Nejc: two-pass trilinear on Napalm (VSA-100). GL_*_MIPMAP_LINEAR draws are
+ * rendered twice, once per member of the mip pair, weighted by the hardware
+ * LOD fraction (see fxMultipass_Trilinear in fxtris.c). Active by default
+ * where the hardware qualifies; FX_MESA_TRILINEAR_FALLBACK=1 ignores the
+ * game's trilinear request and falls back to bilinear exactly as before
+ * (real 0/1 parse - presence alone does not count). */
+ fxMesa->trilinearEnabled = fxMesa->HaveCmbExt;
+ {
+    char *fallback = fxGetRegistryOrEnvironmentString("FX_MESA_TRILINEAR_FALLBACK");
+    if (fallback && fallback[0] == '1') {
+       fxMesa->trilinearEnabled = GL_FALSE;
+    }
+ }
+ fxMesa->trilinearActive = GL_FALSE;
+ fxMesa->trilinearTmu = -1;
+ fxMesa->trilinearBaseUnit = 0;
+ fxMesa->trilinearClassicSplitDraw = GL_FALSE;
+
 /* Nejc 16bit Textures override from 3dfx tools */
    if (fxGetRegistryOrEnvironmentString("FX_MESA_FORCE_16BPP_TEXTURES") != NULL)
    {
