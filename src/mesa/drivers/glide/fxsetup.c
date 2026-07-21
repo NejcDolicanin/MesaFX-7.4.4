@@ -572,7 +572,12 @@ fxSetupTextureSingleTMU_NoLock(GLcontext * ctx, GLuint textureset)
    else
       tmu = ti->whichTMU;
    if (fxMesa->tmuSrc != tmu)
-      fxSelectSingleTMUSrc_NoLock(fxMesa, tmu, ti->LODblend);
+      /* Nejc: the split combine must engage only when the placement above
+       * actually went split - fxSetupSingleTMU_NoLock demotes LODblend
+       * textures it can't split (compressed, tiny); programming the split
+       * combine for a single-TMU texture would blend it with a stale
+       * upstream texel */
+      fxSelectSingleTMUSrc_NoLock(fxMesa, tmu, ti->LODblend && (ti->whichTMU == FX_TMU_SPLIT));
 
    if (textureset == 0 || !fxMesa->haveTwoTMUs)
       unitsmode = fxGetTexSetConfiguration(ctx, tObj, NULL);
