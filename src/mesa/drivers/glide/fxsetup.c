@@ -335,12 +335,18 @@ fxSetupSingleTMU_NoLock(fxMesaContext fxMesa, struct gl_texture_object *tObj)
 {
    tfxTexInfo *ti = fxTMGetTexInfo(tObj);
    int tmu;
-   /* Nejc: split-TMU trilinear placement engages unconditionally on the
-    * classic V2/V3 driver; on Napalm only when the dispatcher routed this
-    * draw to the classic split path (fxTrilinearUseClassicSplit) - the
-    * Napalm combine path renders LODblend-marked textures plain bilinear */
-   FxBool lodBlend = ti->LODblend &&
-                     (!fxMesa->HaveCmbExt || fxMesa->trilinearClassicSplitDraw);
+   /* Nejc: don't use the split-TMU (odd/even) trilinear placement on
+    * textures it can't handle - they render plain bilinear instead:
+    *  - block-compressed LODs: the ODD/EVEN download layout is not
+    *    trustworthy (SoF's compressed effect textures rendered as
+    *    red/green/pink block noise through it)
+    *  - tiny textures (e.g. Quake2's 8x8 particle sprite): split chains of
+    *    very small LODs showed colored garbage on hardware, and there is
+    *    no visible trilinear benefit at that size anyway */
+   const struct gl_texture_image *baseImage = tObj->Image[0][tObj->BaseLevel];
+   FxBool lodBlend = ti->LODblend && baseImage &&
+                     !baseImage->IsCompressed &&
+                     ((baseImage->Width >= 16) || (baseImage->Height >= 16));
 
    if (TDFX_DEBUG & VERBOSE_DRIVER) {
       fprintf(stderr, "fxSetupSingleTMU_NoLock(%p (%d))\n", (void *)tObj, tObj->Name);
@@ -378,17 +384,16 @@ fxSetupSingleTMU_NoLock(fxMesaContext fxMesa, struct gl_texture_object *tObj)
       }
    }
 
-   /* Nejc: black-surface hunt + hardening. If residency could not be
-    * established (e.g. the allocation-failure fail-soft: isInTM false,
-    * whichTMU == FX_TMU_NONE), sourcing below would index ti->tm[] out of
-    * bounds and program a bogus texture address - log and bail, keeping
-    * the last valid texture state for this draw. */
+   /* Nejc: if residency could not be established (e.g. the allocation-
+    * failure fail-soft in fxTMMoveInTM_NoLock: isInTM false, whichTMU ==
+    * FX_TMU_NONE), sourcing below would index ti->tm[] out of bounds and
+    * program a bogus texture address - bail, keeping the last valid
+    * texture state for this draw. */
    if (!ti->isInTM ||
        ((ti->whichTMU != FX_TMU0) && (ti->whichTMU != FX_TMU1) &&
         (ti->whichTMU != FX_TMU_BOTH) && (ti->whichTMU != FX_TMU_SPLIT))) {
-      fprintf(stderr, "[tex] f=%u ANOMALY single-source name=%d in=%d which=%d\n",
-              (unsigned)fxMesa->frame_no, tObj->Name,
-              (int)ti->isInTM, (int)ti->whichTMU);
+      fprintf(stderr, "fxSetupSingleTMU_NoLock: ERROR: texture %d not resident (which=%d)\n",
+              tObj->Name, (int)ti->whichTMU);
       return;
    }
 
@@ -573,9 +578,6 @@ fxSetupTextureSingleTMU_NoLock(GLcontext * ctx, GLuint textureset)
       unitsmode = fxGetTexSetConfiguration(ctx, tObj, NULL);
    else
       unitsmode = fxGetTexSetConfiguration(ctx, NULL, tObj);
-
-   /* Nejc: keep classic-path guard keys distinct from Napalm-path keys */
-   unitsmode |= FX_UM_CLASSIC_PATH;
 
    /* Safe skip: only when both combine mode and bound texture match */
    if (fxMesa->lastUnitsMode == unitsmode &&
@@ -906,14 +908,14 @@ fxSetupDoubleTMU_NoLock(fxMesaContext fxMesa,
       }
    }
 
-   /* Nejc: black-surface hunt + hardening - never source a texture whose
-    * residency is incomplete (allocation-failure fail-soft leaves
-    * isInTM false / tm[] NULL); log and bail instead */
+   /* Nejc: never source a texture whose residency is incomplete (the
+    * allocation-failure fail-soft leaves isInTM false / tm[] NULL) -
+    * bail instead */
    if (!ti0->isInTM || !ti1->isInTM ||
        !ti0->tm[tmu0] || !ti1->tm[tmu1]) {
-      fprintf(stderr, "[tex] f=%u ANOMALY dual-source t0=%d(in=%d) t1=%d(in=%d)\n",
-              (unsigned)fxMesa->frame_no, tObj0->Name, (int)ti0->isInTM,
-              tObj1->Name, (int)ti1->isInTM);
+      fprintf(stderr, "fxSetupDoubleTMU_NoLock: ERROR: texture not resident "
+                      "(t0=%d in=%d, t1=%d in=%d)\n",
+              tObj0->Name, (int)ti0->isInTM, tObj1->Name, (int)ti1->isInTM);
       return;
    }
 
@@ -1325,115 +1327,6 @@ fxSetupTextureNone_NoLock(GLcontext * ctx)
 /************************** Texture Mode SetUp **************************/
 /************************************************************************/
 
-/* Nejc: should this single-texture draw take the classic split-TMU
- * single-pass trilinear path? The old "Napalm can't do single-pass
- * trilinear" note only holds for the extended-combine path - the classic
- * path (odd levels on TMU0, even on TMU1, LOD_FRACTION blend in the TMU
- * combine, env formula on the classic chip combine) runs fine on VSA-100,
- * confirmed on real hardware via MESA_FX_IGNORE_CMBEXT. Single-pass, and
- * unlike the two-pass scheme it has no problem with blending or alpha test.
- * Requires an env mode the classic combine formulas can express.
- */
-static GLboolean
-fxTrilinearUseClassicSplit(GLcontext * ctx, GLuint unit)
-{
-   fxMesaContext fxMesa = FX_CONTEXT(ctx);
-   struct gl_texture_object *tObj = ctx->Texture.Unit[unit]._Current;
-   tfxTexInfo *ti;
-
-   if (!fxMesa->trilinearEnabled || !fxMesa->haveTwoTMUs)
-      return GL_FALSE;
-   if (!tObj || !tObj->DriverData)
-      return GL_FALSE;
-   ti = fxTMGetTexInfo(tObj);
-   if (!ti->LODblend || !ti->wantTrilinear || (ti->mmMode != GR_MIPMAP_NEAREST))
-      return GL_FALSE;
-
-   /* Nejc: placement hysteresis. A texture drawn both single (SPLIT
-    * placement) and dual (per-TMU placement) would ping-pong between
-    * layouts, re-uploading itself on every flip - that allocation churn is
-    * what drove texture memory into occasional allocation failures
-    * (transient black surfaces). So: only split a texture that is not
-    * resident yet (first use, or after eviction) or already split. If a
-    * dual draw placed it per-TMU, single draws use that copy as-is (plain
-    * bilinear, no eviction, no upload); should the dual draws stop, natural
-    * eviction eventually clears it and future single draws split again.
-    * Safe despite being residency-dependent: FX_UM_CLASSIC_PATH keeps the
-    * combine guard keys of the two routes from aliasing. */
-   if (ti->isInTM && (ti->whichTMU != FX_TMU_SPLIT))
-      return GL_FALSE;
-
-   {
-      /* Nejc: don't split tiny textures (e.g. Quake2's 8x8 particle
-       * sprite): there is no visible trilinear benefit at that size, and
-       * split chains of very small LODs showed colored garbage on hardware
-       * (gun-flash particles). Mesa's image dimensions are stable from
-       * upload time, so this routing decision stays deterministic. */
-      const struct gl_texture_image *baseImage =
-         tObj->Image[0][tObj->BaseLevel];
-      if (!baseImage)
-         return GL_FALSE;
-      if ((baseImage->Width < 16) && (baseImage->Height < 16))
-         return GL_FALSE;
-      /* Nejc: no split downloads of compressed textures - the ODD/EVEN
-       * download layout of block-compressed LODs is not trustworthy (SoF's
-       * compressed particle/effect textures rendered as red/green/pink
-       * block noise through this path). Compressed dual draws are fine -
-       * the two-pass scheme uses normal BOTH-mask downloads. */
-      if (baseImage->IsCompressed)
-         return GL_FALSE;
-   }
-
-   switch (ctx->Texture.Unit[unit].EnvMode) {
-   case GL_MODULATE:
-   case GL_REPLACE:
-   case GL_DECAL:
-   case GL_BLEND:
-   case GL_ADD:
-      break;
-   default:
-      return GL_FALSE;	/* e.g. GL_COMBINE_EXT - stay on the Napalm path */
-   }
-
-   if (fxMesa->verbose) {
-      static int once = 0;
-      if (!once) {
-         once = 1;
-         fprintf(stderr, "Voodoo ! split-TMU single-pass trilinear active "
-                         "(first draw: unit %u)\n", unit);
-      }
-   }
-   return GL_TRUE;
-}
-
-/* Nejc: black-surface hunt - one line per texture setup so a repro run
- * shows exactly which draw configuration renders a given surface.
- * path tags: 1C = single classic split trilinear, 1N = single Napalm,
- * 2T = dual two-pass trilinear, 2N = dual normal, 0 = untextured.
- * Per unit: name/envmode-hex/placement (placement 0,1,98=split,99=both,
- * 100=none, -2 = no driver data). Ungated on purpose - remove when done. */
-static void
-fxSetupTextureDrawLog(GLcontext * ctx, const char *tag)
-{
-   fxMesaContext fxMesa = FX_CONTEXT(ctx);
-   struct gl_texture_object *t0 = ctx->Texture.Unit[0]._Current;
-   struct gl_texture_object *t1 = ctx->Texture.Unit[1]._Current;
-   GLuint on0 = ctx->Texture.Unit[0]._ReallyEnabled & (TEXTURE_1D_BIT|TEXTURE_2D_BIT);
-   GLuint on1 = ctx->Texture.Unit[1]._ReallyEnabled & (TEXTURE_1D_BIT|TEXTURE_2D_BIT);
-   int p0 = (t0 && t0->DriverData) ? (int)fxTMGetTexInfo(t0)->whichTMU : -2;
-   int p1 = (t1 && t1->DriverData) ? (int)fxTMGetTexInfo(t1)->whichTMU : -2;
-
-   fprintf(stderr, "[draw] f=%u %s t0=%d/0x%x/p%d t1=%d/0x%x/p%d bl=%d at=%d tri=%d\n",
-           (unsigned)fxMesa->frame_no, tag,
-           (on0 && t0) ? (int)t0->Name : -1,
-           on0 ? (unsigned)ctx->Texture.Unit[0].EnvMode : 0, p0,
-           (on1 && t1) ? (int)t1->Name : -1,
-           on1 ? (unsigned)ctx->Texture.Unit[1].EnvMode : 0, p1,
-           (int)fxMesa->unitsState.blendEnabled,
-           (int)fxMesa->unitsState.alphaTestEnabled,
-           (int)fxMesa->trilinearActive);
-}
-
 static void
 fxSetupTexture_NoLock(GLcontext * ctx)
 {
@@ -1448,29 +1341,15 @@ fxSetupTexture_NoLock(GLcontext * ctx)
       if ((ctx->Texture.Unit[0]._ReallyEnabled & (TEXTURE_1D_BIT|TEXTURE_2D_BIT)) &&
           (ctx->Texture.Unit[1]._ReallyEnabled & (TEXTURE_1D_BIT|TEXTURE_2D_BIT)) &&
           fxMesa->haveTwoTMUs) {
-         fxSetupTextureDrawLog(ctx, fxMesa->trilinearActive ? "2T" : "2N");
          fxSetupTextureDoubleTMUNapalm_NoLock(ctx);
       }
       else if (ctx->Texture.Unit[0]._ReallyEnabled & (TEXTURE_1D_BIT|TEXTURE_2D_BIT)) {
-         /* Nejc: trilinear-wanting single-texture draws use the classic
-          * split-TMU path; everything else stays on the Napalm path */
-         fxMesa->trilinearClassicSplitDraw = fxTrilinearUseClassicSplit(ctx, 0);
-         fxSetupTextureDrawLog(ctx, fxMesa->trilinearClassicSplitDraw ? "1C" : "1N");
-         if (fxMesa->trilinearClassicSplitDraw)
-            fxSetupTextureSingleTMU_NoLock(ctx, 0);
-         else
-            fxSetupTextureSingleTMUNapalm_NoLock(ctx, 0);
+         fxSetupTextureSingleTMUNapalm_NoLock(ctx, 0);
       }
       else if (ctx->Texture.Unit[1]._ReallyEnabled & (TEXTURE_1D_BIT|TEXTURE_2D_BIT)) {
-         fxMesa->trilinearClassicSplitDraw = fxTrilinearUseClassicSplit(ctx, 1);
-         fxSetupTextureDrawLog(ctx, fxMesa->trilinearClassicSplitDraw ? "1C" : "1N");
-         if (fxMesa->trilinearClassicSplitDraw)
-            fxSetupTextureSingleTMU_NoLock(ctx, 1);
-         else
-            fxSetupTextureSingleTMUNapalm_NoLock(ctx, 1);
+         fxSetupTextureSingleTMUNapalm_NoLock(ctx, 1);
       }
       else {
-         fxSetupTextureDrawLog(ctx, "0");
          fxSetupTextureNoneNapalm_NoLock(ctx);
       }
    } else {

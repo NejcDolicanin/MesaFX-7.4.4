@@ -462,23 +462,29 @@ fxMesaCreateContext(GLuint win,
 /* Defaults enabled: keep textures resident on invalidate */
 fxMesa->keepResidentOnInvalidate = GL_TRUE;
 
-/* Nejc: two-pass trilinear on Napalm (VSA-100). GL_*_MIPMAP_LINEAR draws are
- * rendered twice, once per member of the mip pair, weighted by the hardware
- * LOD fraction (see fxMultipass_Trilinear in fxtris.c). Active by default
- * where the hardware qualifies; FX_MESA_TRILINEAR_FALLBACK=1 ignores the
- * game's trilinear request and falls back to bilinear exactly as before
- * (real 0/1 parse - presence alone does not count). */
- fxMesa->trilinearEnabled = fxMesa->HaveCmbExt;
+/* Nejc: FX_MESA_TRILINEAR_ENABLED=1 - true single-pass trilinear via the
+ * classic split-TMU path (odd mip levels on TMU0, even on TMU1, blended by
+ * the hardware LOD fraction). VSA-100 can't fetch a trilinear sample AND a
+ * second texture in the same pass, and mixing the extended (CmbExt) combine
+ * model with the split path corrupts random textures, so this mode hides both from the game: 
+ * the extended combine path is disabled here and the second texture unit is not advertised (see
+ * fxDDInitExtensions) - engines fall back to their own multipass
+ * lightmapping, every draw is single-texture, and GL_*_MIPMAP_LINEAR
+ * requests render genuinely trilinear.
+ * Default (unset or =0): stock driver - multitexture and extended combines
+ * as always, trilinear requests render bilinear on Napalm.
+ fxMesa->trilinearEnabled = GL_FALSE;
  {
-    char *fallback = fxGetRegistryOrEnvironmentString("FX_MESA_TRILINEAR_FALLBACK");
-    if (fallback && fallback[0] == '1') {
-       fxMesa->trilinearEnabled = GL_FALSE;
+    char *tri = fxGetRegistryOrEnvironmentString("FX_MESA_TRILINEAR_ENABLED");
+    if (tri && (tri[0] == '1')) {
+       fxMesa->trilinearEnabled = GL_TRUE;
+       fxMesa->HaveCmbExt = GL_FALSE;	/* classic combine path only */
+       if (fxMesa->verbose) {
+          fprintf(stderr, "Voodoo ! single-pass trilinear enabled "
+                          "(classic combine path, single texture unit)\n");
+       }
     }
  }
- fxMesa->trilinearActive = GL_FALSE;
- fxMesa->trilinearTmu = -1;
- fxMesa->trilinearBaseUnit = 0;
- fxMesa->trilinearClassicSplitDraw = GL_FALSE;
 
 /* Nejc 16bit Textures override from 3dfx tools */
    if (fxGetRegistryOrEnvironmentString("FX_MESA_FORCE_16BPP_TEXTURES") != NULL)

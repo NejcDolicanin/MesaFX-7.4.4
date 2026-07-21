@@ -589,15 +589,6 @@ fxTMMoveInTM_NoLock(fxMesaContext fxMesa, struct gl_texture_object *tObj,
    fxMesa->stats.texUpload++;
 
    ti->isInTM = GL_TRUE;
-
-   /* Nejc: black-surface hunt - residency event trail (ungated on purpose,
-    * remove when the bug is found) */
-   fprintf(stderr, "[tex] f=%u in   name=%d tmu=%d a0=%d a1=%d fmt=%d lod=%d/%d\n",
-           (unsigned)fxMesa->frame_no, tObj->Name, (int)ti->whichTMU,
-           ti->tm[FX_TMU0] ? (int)ti->tm[FX_TMU0]->startAddr : -1,
-           ti->tm[FX_TMU1] ? (int)ti->tm[FX_TMU1]->startAddr : -1,
-           (int)ti->info.format,
-           (int)FX_largeLodValue(ti->info), (int)FX_smallLodValue(ti->info));
 }
 
 
@@ -876,10 +867,6 @@ fxTMMoveOutTM(fxMesaContext fxMesa, struct gl_texture_object *tObj)
 
    if (!ti->isInTM)
       return;
-
-   /* Nejc: black-surface hunt - residency event trail */
-   fprintf(stderr, "[tex] f=%u out  name=%d tmu=%d\n",
-           (unsigned)fxMesa->frame_no, tObj->Name, (int)ti->whichTMU);
 
    switch (ti->whichTMU) {
    case FX_TMU0:

@@ -45,10 +45,6 @@
 
 static GLboolean fxMultipass_ColorSum (GLcontext *ctx, GLuint pass);
 
-/* Nejc: two-pass trilinear (Napalm) */
-static GLboolean fxTrilinearEligible (GLcontext *ctx, GLint *baseUnitOut);
-static GLboolean fxMultipass_Trilinear (GLcontext *ctx, GLuint pass);
-
 
 /*
  * Subpixel offsets to adjust Mesa's (true) window coordinates to
@@ -1670,14 +1666,6 @@ static void fxRenderPrimitive( GLcontext *ctx, GLenum prim )
 static void fxRenderFinish( GLcontext *ctx )
 {
    fxMesaContext fxMesa = FX_CONTEXT(ctx);
-   TNLcontext *tnl = TNL_CONTEXT(ctx);
-
-   /* Nejc: black-surface hunt. run_render calls this after the multipass
-    * loop - a [draw] line WITHOUT a following [fin] means Mesa aborted the
-    * pipeline before the render stage (e.g. batch fully clipped): that
-    * surface was never drawn at all this invocation. */
-   fprintf(stderr, "[fin] f=%u prims=%u\n",
-           (unsigned)fxMesa->frame_no, (unsigned)tnl->vb.PrimitiveCount);
 
    if (fxMesa->render_index & FX_FALLBACK_BIT)
       _swrast_flush( ctx );
@@ -1721,7 +1709,6 @@ void fxCheckIsInHardware( GLcontext *ctx )
    TNLcontext *tnl = TNL_CONTEXT(ctx);
    GLuint oldfallback = fxMesa->fallback;
    GLuint newfallback = fxMesa->fallback = fx_check_IsInHardware( ctx );
-   GLint trilinearBase = 0;
 
    if (newfallback) {
       if (oldfallback == 0) {
@@ -1729,15 +1716,6 @@ void fxCheckIsInHardware( GLcontext *ctx )
             fprintf(stderr, "Voodoo ! enter SW 0x%08x %s\n", newfallback, getFallbackString(newfallback));
          }
 	 _swsetup_Wakeup( ctx );
-      }
-      /* Nejc: never leave the trilinear multipass hook installed for
-       * software rendering */
-      if (tnl->Driver.Render.Multipass == fxMultipass_Trilinear) {
-         tnl->Driver.Render.Multipass = NULL;
-      }
-      if (fxMesa->trilinearActive) {
-         fxMesa->trilinearActive = GL_FALSE;
-         fxMesa->new_state |= FX_NEW_TEXTURING;
       }
    }
    else {
@@ -1765,52 +1743,6 @@ void fxCheckIsInHardware( GLcontext *ctx )
          fxMesa->multipass = GL_TRUE;
          if (fxMesa->unitsState.stencilEnabled) {
             fxMesa->new_state |= FX_NEW_STENCIL;
-         }
-      }
-      else if (fxTrilinearEligible(ctx, &trilinearBase)) {
-         /* Nejc: two-pass trilinear (Napalm) */
-         tnl->Driver.Render.Multipass = fxMultipass_Trilinear;
-      }
-
-      /* Nejc: the pass-1 trilinear setup - and, with a lightmap-first unit
-       * binding, the unit->TMU coordinate mapping - differs from the normal
-       * setup for the very same GL state, so whenever a draw moves in or
-       * out of the two-pass scheme (or its base unit changes) reprogram
-       * texturing AND re-derive the vertex layout and texcoord scales here:
-       * the gl-state bit that triggered this check (e.g. _NEW_STENCIL) is
-       * not guaranteed to cover them */
-      {
-         GLboolean trilinearNow =
-            (tnl->Driver.Render.Multipass == fxMultipass_Trilinear);
-         if ((trilinearNow != fxMesa->trilinearActive) ||
-             (trilinearNow && (trilinearBase != fxMesa->trilinearBaseUnit))) {
-            /* Nejc: black-surface hunt - eligibility transitions */
-            fprintf(stderr, "[tri] f=%u active=%d base=%d\n",
-                    (unsigned)fxMesa->frame_no, (int)trilinearNow, (int)trilinearBase);
-            fxMesa->trilinearActive = trilinearNow;
-            fxMesa->trilinearBaseUnit = trilinearBase;
-            fxMesa->new_state |= FX_NEW_TEXTURING;
-
-            fxChooseVertexState(ctx);
-            {
-               struct gl_texture_unit *t0 =
-                  &ctx->Texture.Unit[fxMesa->tmu_source[0]];
-               struct gl_texture_unit *t1 =
-                  &ctx->Texture.Unit[fxMesa->tmu_source[1]];
-
-               if (t0->_Current && FX_TEXTURE_DATA(t0)) {
-                  fxMesa->s0scale = FX_TEXTURE_DATA(t0)->sScale;
-                  fxMesa->t0scale = FX_TEXTURE_DATA(t0)->tScale;
-                  fxMesa->inv_s0scale = 1.0F / fxMesa->s0scale;
-                  fxMesa->inv_t0scale = 1.0F / fxMesa->t0scale;
-               }
-               if (t1->_Current && FX_TEXTURE_DATA(t1)) {
-                  fxMesa->s1scale = FX_TEXTURE_DATA(t1)->sScale;
-                  fxMesa->t1scale = FX_TEXTURE_DATA(t1)->tScale;
-                  fxMesa->inv_s1scale = 1.0F / fxMesa->s1scale;
-                  fxMesa->inv_t1scale = 1.0F / fxMesa->t1scale;
-               }
-            }
          }
       }
    }
@@ -1913,205 +1845,6 @@ fxMultipass_ColorSum (GLcontext *ctx, GLuint pass)
  fxSetupBlend(ctx);
  fxSetupDepthTest(ctx);
  fxSetupTexture(ctx);
-
- return (pass == 1);
-}
-
-
-/* Nejc: can the current draw state take the two-pass trilinear path?
- * DUAL-TEXTURE draws only - single-texture draws get single-pass trilinear
- * via the classic split-TMU route instead (see fxTrilinearUseClassicSplit
- * in fxsetup.c), which is one pass and has no blend/alpha-test limits.
- * Requirements here:
- *  - Napalm combine model with the feature enabled (V2/V3 never come here)
- *  - exactly one of the two textures asked for GL_*_MIPMAP_LINEAR - that's
- *    the base; *baseUnitOut reports which unit holds it (Quake2-family
- *    engines bind the base on unit 0, Quake3 binds the lightmap first and
- *    the base on unit 1)
- *  - env modes the split combine model can express: unit 0 MODULATE or
- *    REPLACE; unit 1 must be GL_MODULATE, so that its factor distributes
- *    over the two-pass sum
- *  - formats whose color actually comes from the texture (no GL_ALPHA)
- *  - no blending / stencil: pass 2 is composited with an additive blend and
- *    must land exactly on the pixels of pass 1. Alpha TEST is fine - both
- *    passes carry the real GL alpha, so the test resolves identically.
- */
-static GLboolean
-fxTrilinearEligible (GLcontext *ctx, GLint *baseUnitOut)
-{
- fxMesaContext fxMesa = FX_CONTEXT(ctx);
- const tfxUnitsState *us = &fxMesa->unitsState;
- GLuint on0 = ctx->Texture.Unit[0]._ReallyEnabled & (TEXTURE_1D_BIT|TEXTURE_2D_BIT);
- GLuint on1 = ctx->Texture.Unit[1]._ReallyEnabled & (TEXTURE_1D_BIT|TEXTURE_2D_BIT);
- struct gl_texture_object *tObjU0, *tObjU1;
- tfxTexInfo *tiU0, *tiU1, *tiBase, *tiLm;
- GLenum env0;
-
- *baseUnitOut = 0;
-
- if (!fxMesa->trilinearEnabled)
-    return GL_FALSE;
- /* alpha test is fine: both passes compute the real GL alpha (see the
-  * alpha combines in fxSetupTrilinearPass1DualNapalm_NoLock), so the test
-  * resolves identically per pixel in both passes. SoF runs its lightmapped
-  * world with alpha test enabled. Blending stays excluded (pass 2 needs
-  * exclusive use of the blender) and so does stencil (double-applied ops). */
- if (us->blendEnabled || us->stencilEnabled)
-    return GL_FALSE;
- if (!on0 || !on1)
-    return GL_FALSE;	/* single-texture draws take the split route */
- if (!fxMesa->haveTwoTMUs)
-    return GL_FALSE;
-
- /* stage semantics: unit 1 multiplies onto unit 0's result, so unit 1
-  * must be GL_MODULATE for its factor to distribute over the two-pass
-  * sum; unit 0 - whichever texture it holds - may be MODULATE or
-  * REPLACE (both mean "first stage color") */
- env0 = ctx->Texture.Unit[0].EnvMode;
- if (ctx->Texture.Unit[1].EnvMode != GL_MODULATE)
-    return GL_FALSE;
- if ((env0 != GL_MODULATE) && (env0 != GL_REPLACE))
-    return GL_FALSE;
-
- tObjU0 = ctx->Texture.Unit[0]._Current;
- tObjU1 = ctx->Texture.Unit[1]._Current;
- if (!tObjU0 || !tObjU0->DriverData || !tObjU1 || !tObjU1->DriverData)
-    return GL_FALSE;
- tiU0 = fxTMGetTexInfo(tObjU0);
- tiU1 = fxTMGetTexInfo(tObjU1);
-
- /* the unit whose texture asked for trilinear is the base and gets the
-  * two-pass treatment, the other one (lightmap) stays live on the other
-  * TMU in both passes; the base always lands on upstream TMU1, whichever
-  * GL unit it is bound to (see fxSetupTrilinearPass1DualNapalm_NoLock) */
- if (tiU0->wantTrilinear == tiU1->wantTrilinear)
-    return GL_FALSE;	/* neither wants it, or both (needs more passes) */
- if (tiU0->wantTrilinear) {
-    tiBase = tiU0;
-    tiLm = tiU1;
- } else {
-    tiBase = tiU1;
-    tiLm = tiU0;
-    *baseUnitOut = 1;
- }
- if (tiBase->mmMode != GR_MIPMAP_NEAREST)
-    return GL_FALSE;
- if (tiBase->baseLevelInternalFormat == GL_ALPHA)
-    return GL_FALSE;	/* base color must come from the texture */
- if (tiLm->baseLevelInternalFormat == GL_ALPHA)
-    return GL_FALSE;	/* classic modulate can't mimic the GL_ALPHA formula */
-
- return GL_TRUE;
-}
-
-
-/* Nejc: second (odd) pass of two-pass trilinear, plus the state restore.
- * The TNL pipeline calls this after each rendered pass; returning true
- * re-rasterizes the same vertex batch. Pass 1 was set up by
- * fxSetupTrilinearPass1DualNapalm_NoLock (fxsetup.h) and has already drawn
- * lightmap * texel_even * weight_even; flipping the weight combine on the
- * armed TMU to the odd variant is all it takes to add the weight_odd term
- * on top - everything else (the lightmap TMU, chip combine) stays as pass 1
- * left it.
- */
-static GLboolean
-fxMultipass_Trilinear (GLcontext *ctx, GLuint pass)
-{
- fxMesaContext fxMesa = FX_CONTEXT(ctx);
- tfxUnitsState *us = &fxMesa->unitsState;
-
- /* Nejc: black-surface hunt - log EVERY callback entry (before any early
-  * return), so a missing pass-2 can be attributed precisely: if the [draw]
-  * line for a batch is never followed by "[mp] call pass=1", the callback
-  * was never installed/invoked for that batch at all (Mesa-side pipeline
-  * abort, or the Multipass hook got cleared/overwritten between setup and
-  * render) - a fundamentally different bug than "installed but tmu unarmed
-  * or renders wrong". */
- fprintf(stderr, "[mp] f=%u call pass=%d tmu=%d\n",
-         (unsigned)fxMesa->frame_no, (int)pass, (int)fxMesa->trilinearTmu);
-
- switch (pass) {
-        case 1: { /* first pass rendered - switch to the odd-pass state */
-             GLint tmu = fxMesa->trilinearTmu;
-
-             if ((tmu != FX_TMU0) && (tmu != FX_TMU1)) {
-                /* the pass-1 setup never armed this draw - stay single-pass */
-                fprintf(stderr, "[mp] f=%u UNARMED - staying single-pass\n",
-                        (unsigned)fxMesa->frame_no);
-                return GL_FALSE;
-             }
-
-             if (fxMesa->verbose) {
-                static int once = 0;
-                if (!once) {
-                   once = 1;
-                   fprintf(stderr, "Voodoo ! two-pass trilinear active "
-                                   "(first dual draw: base unit %d, TMU %d)\n",
-                           fxMesa->trilinearBaseUnit, tmu);
-                }
-             }
-
-             /* Nejc: black-surface hunt - mark the odd pass */
-             fprintf(stderr, "[mp] f=%u pass2 tmu=%d\n",
-                     (unsigned)fxMesa->frame_no, tmu);
-
-             /* RGB = texel * weight(odd member). ONE_MINUS_LOD_FRACTION
-              * clears the reverse-blend bit - Glide's two-pass signature
-              * that raises SST_LOD_ODD on this TMU, so this pass samples
-              * the odd member of the mip pair. Alpha stays the real texture
-              * alpha (as in pass 1), keeping alpha test exact per pixel. */
-             grTexCombine(tmu,
-                          GR_COMBINE_FUNCTION_SCALE_MINUS_LOCAL_ADD_LOCAL,
-                          GR_COMBINE_FACTOR_ONE_MINUS_LOD_FRACTION,
-                          GR_COMBINE_FUNCTION_LOCAL,
-                          GR_COMBINE_FACTOR_NONE,
-                          FXFALSE, FXFALSE);
-
-             /* sum onto pass 1 */
-             if (fxMesa->HavePixExt) {
-                fxMesa->Glide.grAlphaBlendFunctionExt(GR_BLEND_ONE, GR_BLEND_ONE,
-                                                      GR_BLEND_OP_ADD,
-                                                      GR_BLEND_ZERO, GR_BLEND_ONE,
-                                                      GR_BLEND_OP_ADD);
-             } else {
-                grAlphaBlendFunction(GR_BLEND_ONE, GR_BLEND_ONE,
-                                     GR_BLEND_ZERO, GR_BLEND_ONE);
-             }
-
-             /* pass 1 already contributed the full fog color term; this pass
-              * must only be fog-attenuated, so fog "adds" black */
-             if (ctx->Fog.Enabled) {
-                grFogColorValue(0);
-             }
-
-             /* land exactly on the pixels pass 1 resolved, without z-writes */
-             if (us->depthTestEnabled) {
-                switch (us->depthTestFunc) {
-                   default:
-                      grDepthBufferFunction(GR_CMP_EQUAL);
-                      grDepthMask(FXFALSE);
-                   case GL_NEVER:
-                   case GL_ALWAYS:
-                      ;
-                }
-             }
-             break;
-        }
-        case 2: /* 2nd pass (last): restore from untouched authoritative state */
-             /* Nejc: black-surface hunt - mark the restore */
-             fprintf(stderr, "[mp] f=%u restore\n", (unsigned)fxMesa->frame_no);
-             fxSetupBlend(ctx);
-             fxSetupDepthTest(ctx);	/* also recomputes hsrDepthPassMode */
-             if (ctx->Fog.Enabled) {
-                fxMesa->new_state |= FX_NEW_FOG;	/* fog color comes back before the next draw */
-             }
-             /* full texture re-setup; still trilinear-active, so this lands
-              * back in the pass-1 state with all combine caches refreshed */
-             fxSetupTexture(ctx);
-             break;
-        default:
-             assert(0); /* NOTREACHED */
- }
 
  return (pass == 1);
 }

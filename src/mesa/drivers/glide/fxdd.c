@@ -1777,8 +1777,11 @@ fxDDInitFxMesaContext(fxMesaContext fxMesa)
     }
 #endif
    }
+   /* Nejc: trilinear mode needs both TMUs for the split placement of a
+    * single texture, so only one texture unit is exposed to the game */
    ctx->Const.MaxTextureCoordUnits =
-   ctx->Const.MaxTextureImageUnits = fxMesa->haveTwoTMUs ? 2 : 1;
+   ctx->Const.MaxTextureImageUnits =
+      (fxMesa->haveTwoTMUs && !fxMesa->trilinearEnabled) ? 2 : 1;
    ctx->Const.MaxTextureUnits = MAX2(ctx->Const.MaxTextureImageUnits, ctx->Const.MaxTextureCoordUnits);
 
    fxMesa->new_state = _NEW_ALL;
@@ -1865,7 +1868,10 @@ fxDDInitExtensions(GLcontext * ctx)
    _mesa_enable_extension(ctx, "GL_EXT_stencil_wrap");
    _mesa_enable_extension(ctx, "GL_EXT_stencil_two_side");
 
-   if (fxMesa->haveTwoTMUs) {
+   /* Nejc: in trilinear mode (FX_MESA_TRILINEAR_ENABLED=1) multitexture is
+    * hidden - both TMUs are reserved for the split single-pass trilinear
+    * placement, and engines fall back to their own multipass lightmapping */
+   if (fxMesa->haveTwoTMUs && !fxMesa->trilinearEnabled) {
       _mesa_enable_extension(ctx, "GL_ARB_multitexture");
       _mesa_enable_extension(ctx, "GL_SGIS_multitexture");  /* GL_SGIS_multi will just wrap to GL_ARB_multitexture */
    }

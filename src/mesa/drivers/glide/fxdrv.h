@@ -157,14 +157,6 @@
 #define FX_UM_ALPHA_ITERATED        0x04000000
 #define FX_UM_ALPHA_CONSTANT        0x08000000
 
-/* Nejc: route marker mixed into lastUnitsMode by the classic single-TMU
- * path on Napalm, so the combine dedup guard can never treat a key written
- * by the Napalm path as up-to-date for the classic path (or vice versa) -
- * the trilinear split routing can flip paths for the same texture+env when
- * residency changes (see fxTrilinearUseClassicSplit) */
-#define FX_UM_CLASSIC_PATH          0x80000000
-
-
 /* for Voodoo3/Banshee's grColorCombine() and grAlphaCombine() */
 struct tdfx_combine {
    GrCombineFunction_t Function;	/* Combine function */
@@ -299,9 +291,6 @@ typedef struct tfxTexInfo_t
    GrTextureFilterMode_t minFilt;
    GrTextureFilterMode_t maxFilt;
    FxBool LODblend;
-   /* Nejc: GL_*_MIPMAP_LINEAR was requested on Napalm - candidate for the
-    * two-pass trilinear scheme (fxMultipass_Trilinear in fxtris.c) */
-   FxBool wantTrilinear;
 
    GrTextureClampMode_t sClamp;
    GrTextureClampMode_t tClamp;
@@ -481,13 +470,11 @@ struct tfxMesaContext
    tfxUnitsState restoreUnitsState;	/* saved during multipass */
    GLboolean multipass;			/* true when drawing intermediate pass */
 
-   /* Nejc: two-pass trilinear (Napalm/VSA-100) */
-   GLboolean trilinearEnabled;	/* on unless FX_MESA_TRILINEAR_FALLBACK=1 */
-   GLboolean trilinearActive;	/* current draw state takes the two-pass path */
-   GLint trilinearTmu;		/* TMU carrying the weight combine (-1 = not armed) */
-   GLint trilinearBaseUnit;	/* GL unit holding the trilinear base on dual draws */
-   GLboolean trilinearClassicSplitDraw; /* current single-texture draw routed to
-					 * the classic split-TMU trilinear path */
+   /* Nejc: FX_MESA_TRILINEAR_ENABLED=1 - the whole context runs the
+    * classic combine path (HaveCmbExt forced off) with a single texture
+    * unit exposed, so GL_*_MIPMAP_LINEAR textures get true single-pass
+    * split-TMU trilinear (see fxMesaCreateContext / fxDDInitExtensions) */
+   GLboolean trilinearEnabled;
 
    GLuint new_state;
    GLuint new_gl_state;

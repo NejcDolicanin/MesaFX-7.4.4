@@ -257,7 +257,6 @@ fxAllocTexObjData(fxMesaContext fxMesa)
 
    ti->mmMode = GR_MIPMAP_NEAREST;
    ti->LODblend = FXFALSE;
-   ti->wantTrilinear = FXFALSE;
 
    /* Initialie scale factors to safe defaults for bind-before-gen case*/
    /* 256.0F is a safe identity default, It maps a 1.0 OpenGL coordinate to a full Glide texture span, prevents division with 0 */
@@ -359,13 +358,11 @@ fxDDTexParam(GLcontext * ctx, GLenum target, struct gl_texture_object *tObj,
 	 ti->mmMode = GR_MIPMAP_DISABLE;
 	 ti->minFilt = GR_TEXTUREFILTER_POINT_SAMPLED;
 	 ti->LODblend = FXFALSE;
-	 ti->wantTrilinear = FXFALSE;
 	 break;
       case GL_LINEAR:
 	 ti->mmMode = GR_MIPMAP_DISABLE;
 	 ti->minFilt = GR_TEXTUREFILTER_BILINEAR;
 	 ti->LODblend = FXFALSE;
-	 ti->wantTrilinear = FXFALSE;
 	 break;
       case GL_NEAREST_MIPMAP_LINEAR:
          /* [dBorca]
@@ -373,9 +370,9 @@ fxDDTexParam(GLcontext * ctx, GLenum target, struct gl_texture_object *tObj,
           * because the way its combiners are set. So we fall back
           * to GL_NEAREST_MIPMAP_NEAREST. We'll let true trilinear
           * enabled for V2, V3.
-          * Nejc: on Napalm the level blend is done as a second additive
-          * rendering pass instead (fxMultipass_Trilinear) - mark the
-          * texture here, the per-draw decision is fxTrilinearEligible().
+          * Nejc: FX_MESA_TRILINEAR_ENABLED=1 clears HaveCmbExt at context
+          * creation, which puts Napalm on the classic path below - true
+          * single-pass split-TMU trilinear, same as V2/V3.
           */
          if (!fxMesa->HaveCmbExt) {
 	    if (fxMesa->haveTwoTMUs) {
@@ -386,23 +383,12 @@ fxDDTexParam(GLcontext * ctx, GLenum target, struct gl_texture_object *tObj,
 	       ti->LODblend = FXFALSE;
             }
 	    ti->minFilt = GR_TEXTUREFILTER_POINT_SAMPLED;
-	    ti->wantTrilinear = FXFALSE;
 	    break;
          }
-	 ti->mmMode = GR_MIPMAP_NEAREST;
-	 ti->minFilt = GR_TEXTUREFILTER_POINT_SAMPLED;
-	 /* LODblend: single-texture draws take the classic split-TMU
-	  * single-pass route; wantTrilinear: dual draws take the two-pass
-	  * route (fxMultipass_Trilinear) */
-	 ti->LODblend = (fxMesa->haveTwoTMUs && fxMesa->trilinearEnabled)
-	                ? FXTRUE : FXFALSE;
-	 ti->wantTrilinear = fxMesa->trilinearEnabled;
-	 break;
       case GL_NEAREST_MIPMAP_NEAREST:
 	 ti->mmMode = GR_MIPMAP_NEAREST;
 	 ti->minFilt = GR_TEXTUREFILTER_POINT_SAMPLED;
 	 ti->LODblend = FXFALSE;
-	 ti->wantTrilinear = FXFALSE;
 	 break;
       case GL_LINEAR_MIPMAP_LINEAR:
          /* (same notes as GL_NEAREST_MIPMAP_LINEAR above) */
@@ -415,28 +401,19 @@ fxDDTexParam(GLcontext * ctx, GLenum target, struct gl_texture_object *tObj,
                ti->LODblend = FXFALSE;
             }
             ti->minFilt = GR_TEXTUREFILTER_BILINEAR;
-            ti->wantTrilinear = FXFALSE;
             break;
          }
-	 ti->mmMode = GR_MIPMAP_NEAREST;
-	 ti->minFilt = GR_TEXTUREFILTER_BILINEAR;
-	 /* see GL_NEAREST_MIPMAP_LINEAR above */
-	 ti->LODblend = (fxMesa->haveTwoTMUs && fxMesa->trilinearEnabled)
-	                ? FXTRUE : FXFALSE;
-	 ti->wantTrilinear = fxMesa->trilinearEnabled;
-	 break;
       case GL_LINEAR_MIPMAP_NEAREST:
 	 ti->mmMode = GR_MIPMAP_NEAREST;
 	 ti->minFilt = GR_TEXTUREFILTER_BILINEAR;
 	 ti->LODblend = FXFALSE;
-	 ti->wantTrilinear = FXFALSE;
 	 break;
       default:
 	 break;
       }
-      /* Nejc: a filter change can flip the trilinear routing (classic
-       * split vs Napalm combine path) for the same texture and env mode -
-       * don't let the combine dedup guard skip the reprogram */
+      /* Nejc: a min-filter change flips LODblend, which changes the TMU
+       * combine for the same texture and env mode - don't let the combine
+       * dedup guard skip the reprogram */
       fxMesa->lastCombineTex[0] = NULL;
       fxMesa->lastCombineTex[1] = NULL;
       fxTexInvalidate(ctx, tObj, INVALIDATE_NONE);

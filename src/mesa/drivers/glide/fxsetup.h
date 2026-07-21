@@ -803,157 +803,6 @@ fxSelectSingleTMUSrcNapalm_NoLock(fxMesaContext fxMesa, GLint tmu, FxBool LODble
    }
 }
 
-/* Nejc: pass-1 (even) setup for two-pass trilinear on a genuine dual-texture
- * draw (base + lightmap in one draw call).
- *
- * (Single-texture draws don't come here: they use the classic split-TMU
- * single-pass trilinear path instead - see fxSetupTexture_NoLock. The
- * two-pass scheme exists for the dual case only, where both TMUs are taken
- * and there is no capacity left for a split.)
- *
- * The mechanism, verified against Glide h5 source and the VSA-100 CSIM:
- *  - grTexMipMapMode(..., FXTRUE) sets SST_TRILINEAR. LOD selection then
- *    snaps to the even (this pass) or odd (SST_LOD_ODD, second pass) member
- *    of the {floor(lod), floor(lod)+1} mip pair. The texture stays a single
- *    normal GR_MIPMAPLEVELMASK_BOTH download - no extra memory.
- *  - the classic texture combine with a LOD_FRACTION factor scales the texel
- *    by the parity-adjusted blend weight of that member. Its
- *    ONE_MINUS_LOD_FRACTION twin is Glide's documented signature for the odd
- *    pass and automatically raises SST_LOD_ODD (grep for "Hack to enable
- *    TWO-PASS Trilinear" in Glide's gtex.c).
- * Pass 1 renders texel_even * weight_even, modulated by the lightmap on the
- * downstream TMU; fxMultipass_Trilinear (fxtris.c) then re-rasterizes the
- * same batch with the odd-pass combine and additive blending. Because the
- * modulate distributes over the sum, the result is exactly
- * lightmap * trilinear(base).
- *
- * While SST_TRILINEAR is set the hardware parity-inverts the TMU combine
- * factor per pixel (CSIM: TREX.C/CCU.C), which would corrupt any normal
- * formula like modulate-by-texture - so the base's env is applied at the
- * chip combine instead: the TMU outputs the weighted texel, the chip does
- * MODULATE/REPLACE (the only env modes fxTrilinearEligible admits). Classic
- * chip-wide grColor/AlphaCombine is safe on Napalm: Glide switches the chip
- * out of extended-combine mode in the classic entry points and back in the
- * Ext ones.
- *
- * The base MUST sit on the upstream TMU: with SST_TRILINEAR set, a TMU's
- * combine factor is parity-inverted per pixel, so only the LOD_FRACTION
- * weight formula is safe there - a downstream "modulate by other" never is.
- * fxTrilinearEligible therefore reports which GL unit holds the base
- * (Quake2-family engines bind it on unit 0, Quake3 binds the lightmap first
- * and the base on unit 1), and this function places the textures by ROLE:
- * lightmap on downstream TMU0, base on upstream TMU1
- * (fxSetupDoubleTMU_NoLock's tObj0/tObj1 contract, incl. evicting swapped
- * residencies). fxChooseVertexState routes each unit's texcoords to the
- * matching TMU - crossed mapping for base-on-unit-0, straight-through for
- * base-on-unit-1. fxTrilinearEligible only admits the second GL stage
- * (unit 1) in GL_MODULATE, which is what the downstream combine implements
- * regardless of which texture it holds.
- */
-static void
-fxSetupTrilinearPass1DualNapalm_NoLock(GLcontext * ctx)
-{
-   fxMesaContext fxMesa = FX_CONTEXT(ctx);
-   GLint baseUnit = fxMesa->trilinearBaseUnit;
-   struct gl_texture_object *baseObj = ctx->Texture.Unit[baseUnit]._Current;
-   struct gl_texture_object *lmObj = ctx->Texture.Unit[1 - baseUnit]._Current;
-
-   if (TDFX_DEBUG & VERBOSE_DRIVER) {
-      fprintf(stderr, "fxSetupTrilinearPass1DualNapalm_NoLock(base unit %d)\n",
-                      baseUnit);
-   }
-
-   /* place by role: lightmap -> downstream TMU0, base -> upstream TMU1 */
-   fxSetupDoubleTMU_NoLock(fxMesa, lmObj, baseObj);
-
-   /* Combines first, grTexMipMapMode(..., FXTRUE) last - same UMA-rule
-    * ordering constraint as the single-texture variant (Glide's combine
-    * entry points would force-raise SST_LOD_ODD on TMU1 otherwise). Both
-    * TMUs' SST_TRILINEAR bits are clear right now: fxSetupDoubleTMU_NoLock
-    * just programmed grTexMipMapMode(..., FXFALSE) on both. */
-
-   /* upstream TMU1: RGB = base texel * weight(even member). The weight
-    * lives on the RGB side only - Glide's SST_LOD_ODD signature checks the
-    * RGB combine bits, and the framebuffer sum uses (ONE, ONE) so source
-    * alpha is free to carry the REAL texture alpha instead: FUNCTION_LOCAL
-    * is F-independent and thus safe under the trilinear parity-invert.
-    * Real alpha in both passes makes alpha test work exactly (SoF runs its
-    * lightmapped world with alpha test enabled). */
-   grTexCombine(FX_TMU1,
-                GR_COMBINE_FUNCTION_SCALE_MINUS_LOCAL_ADD_LOCAL,
-                GR_COMBINE_FACTOR_LOD_FRACTION,
-                GR_COMBINE_FUNCTION_LOCAL,
-                GR_COMBINE_FACTOR_NONE,
-                FXFALSE, FXFALSE);
-
-   /* downstream TMU0: RGB modulate by the lightmap; alpha = baseA * lmA
-    * (the GL MODULATE alpha formula; lmA is 255 for RGB lightmaps) */
-   grTexCombine(FX_TMU0,
-                GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
-                GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
-                FXFALSE, FXFALSE);
-
-   /* even pass: trilinear LOD mode on the base TMU only */
-   grTexMipMapMode(FX_TMU1, GR_MIPMAP_NEAREST, FXTRUE);
-
-   /* The vertex color enters the chain through the FIRST GL stage (unit 0):
-    * if its env is MODULATE the chip multiplies by iterated color, if
-    * REPLACE nothing does - correct for both unit orientations, since the
-    * whole chain is one commutative product. (GL_ALPHA formats are excluded
-    * by fxTrilinearEligible.) */
-   if (ctx->Texture.Unit[0].EnvMode == GL_MODULATE) {
-      grColorCombine(GR_COMBINE_FUNCTION_SCALE_OTHER,
-                     GR_COMBINE_FACTOR_LOCAL,
-                     GR_COMBINE_LOCAL_ITERATED,
-                     GR_COMBINE_OTHER_TEXTURE,
-                     FXFALSE);
-   } else {
-      /* GL_REPLACE */
-      grColorCombine(GR_COMBINE_FUNCTION_SCALE_OTHER,
-                     GR_COMBINE_FACTOR_ONE,
-                     GR_COMBINE_LOCAL_ITERATED,
-                     GR_COMBINE_OTHER_TEXTURE,
-                     FXFALSE);
-   }
-   /* real GL alpha at the chip (blending is excluded, but alpha TEST needs
-    * it): the TMU chain already delivers texA_base * texA_lm; the chip
-    * multiplies in the iterated alpha - except for a first stage in
-    * GL_REPLACE with an alpha-carrying format, where GL drops the fragment
-    * alpha. ifmt 0 (not yet derived, e.g. compressed uploads) counts as
-    * alpha-carrying, which keeps alpha-tested cutouts correct. */
-   {
-      tfxTexInfo *tiU0 = fxTMGetTexInfo(ctx->Texture.Unit[0]._Current);
-      GLint ifmt0 = tiU0->baseLevelInternalFormat;
-      GLboolean fmt0NoAlpha = (ifmt0 == GL_RGB) || (ifmt0 == GL_LUMINANCE);
-
-      if ((ctx->Texture.Unit[0].EnvMode == GL_REPLACE) && !fmt0NoAlpha) {
-         grAlphaCombine(GR_COMBINE_FUNCTION_SCALE_OTHER,
-                        GR_COMBINE_FACTOR_ONE,
-                        GR_COMBINE_LOCAL_ITERATED,
-                        GR_COMBINE_OTHER_TEXTURE,
-                        FXFALSE);
-      } else {
-         grAlphaCombine(GR_COMBINE_FUNCTION_SCALE_OTHER,
-                        GR_COMBINE_FACTOR_LOCAL,
-                        GR_COMBINE_LOCAL_ITERATED,
-                        GR_COMBINE_OTHER_TEXTURE,
-                        FXFALSE);
-      }
-   }
-
-   /* dual-texture vertex hints, as in the normal double-TMU path */
-   fxMesa->stw_hint_state |= GR_STWHINT_ST_DIFF_TMU1;
-   FX_grHints_NoLock(GR_HINT_STWHINT, fxMesa->stw_hint_state);
-
-   /* bypassed bookkeeping - force full re-derivation on the next draw */
-   fxMesa->tmuSrc = FX_TMU_NONE;
-   fxMesa->lastUnitsMode = FX_UM_NONE;
-   fxMesa->lastCombineTex[0] = NULL;
-   fxMesa->lastCombineTex[1] = NULL;
-
-   fxMesa->trilinearTmu = FX_TMU1;	/* arms the odd pass */
-}
-
 static void
 fxSetupTextureSingleTMUNapalm_NoLock(GLcontext * ctx, GLuint textureset)
 {
@@ -977,14 +826,8 @@ fxSetupTextureSingleTMUNapalm_NoLock(GLcontext * ctx, GLuint textureset)
       tmu = FX_TMU0;
    else
       tmu = ti->whichTMU;
-
-   /* Nejc: never pass LODblend here - trilinear-wanting single-texture
-    * draws are routed to the classic split path by fxSetupTexture_NoLock;
-    * if one still lands here (env mode the classic path can't express) it
-    * renders plain bilinear, and the Napalm LODblend combine is an
-    * unimplemented stub anyway */
    if (fxMesa->tmuSrc != tmu)
-      fxSelectSingleTMUSrcNapalm_NoLock(fxMesa, tmu, FXFALSE);
+      fxSelectSingleTMUSrcNapalm_NoLock(fxMesa, tmu, ti->LODblend);
 
    if (textureset == 0 || !fxMesa->haveTwoTMUs)
       unitsmode = fxGetTexSetConfiguration(ctx, tObj, NULL);
@@ -1038,13 +881,6 @@ fxSetupTextureDoubleTMUNapalm_NoLock(GLcontext * ctx)
 
    ti1 = fxTMGetTexInfo(tObj1);
    fxTexValidate(ctx, tObj1);
-
-   /* Nejc: trilinear-eligible dual draws take the dedicated two-pass setup;
-    * it makes its own, orientation-aware fxSetupDoubleTMU_NoLock call */
-   if (fxMesa->trilinearActive) {
-      fxSetupTrilinearPass1DualNapalm_NoLock(ctx);
-      return;
-   }
 
    fxSetupDoubleTMU_NoLock(fxMesa, tObj0, tObj1);
 
