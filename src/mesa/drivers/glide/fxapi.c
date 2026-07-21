@@ -466,17 +466,31 @@ fxMesa->keepResidentOnInvalidate = GL_TRUE;
  * classic split-TMU path (odd mip levels on TMU0, even on TMU1, blended by
  * the hardware LOD fraction). VSA-100 can't fetch a trilinear sample AND a
  * second texture in the same pass, and mixing the extended (CmbExt) combine
- * model with the split path corrupts random textures, so this mode hides both from the game: 
- * the extended combine path is disabled here and the second texture unit is not advertised (see
- * fxDDInitExtensions) - engines fall back to their own multipass
- * lightmapping, every draw is single-texture, and GL_*_MIPMAP_LINEAR
- * requests render genuinely trilinear.
+ * model with the split path corrupts random textures, so this mode hides
+ * both from the game: the extended combine path is disabled here and the
+ * second texture unit is not advertised (see fxDDInitExtensions) - engines
+ * fall back to their own multipass lightmapping, every draw is
+ * single-texture, and GL_*_MIPMAP_LINEAR requests render genuinely
+ * trilinear.
  * Default (unset or =0): stock driver - multitexture and extended combines
  * as always, trilinear requests render bilinear on Napalm.
+ * Overridden by glide's own FX_GLIDE_LOD_DITHER (dithered mip transitions,
+ * full speed, multitexture kept): running both would drop multitexture and
+ * ~20 fps for nothing, so when that is set the driver stays stock and lets
+ * glide do the dithering. */
  fxMesa->trilinearEnabled = GL_FALSE;
  {
     char *tri = fxGetRegistryOrEnvironmentString("FX_MESA_TRILINEAR_ENABLED");
-    if (tri && (tri[0] == '1')) {
+    char *lodDither = fxGetRegistryOrEnvironmentString("FX_GLIDE_LOD_DITHER");
+
+    if (lodDither && (atoi(lodDither) != 0)) {
+       /* glide dithers the mips; keep the driver fully stock */
+       if (fxMesa->verbose) {
+          fprintf(stderr, "Voodoo ! FX_GLIDE_LOD_DITHER is set%s\n",
+                  (tri && (tri[0] == '1'))
+                     ? " - ignoring FX_MESA_TRILINEAR_ENABLED" : "");
+       }
+    } else if (tri && (tri[0] == '1')) {
        fxMesa->trilinearEnabled = GL_TRUE;
        fxMesa->HaveCmbExt = GL_FALSE;	/* classic combine path only */
        if (fxMesa->verbose) {
