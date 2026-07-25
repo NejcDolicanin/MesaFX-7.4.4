@@ -232,7 +232,7 @@ static GrScreenResolution_t fxBestResolution (int width, int height)
         { GR_RESOLUTION_960x720,    960,  720 },
         { GR_RESOLUTION_856x480,    856,  480 },
         { GR_RESOLUTION_512x256,    512,  256 },
-        { GR_RESOLUTION_1024x768,  1024,  768 },
+        { GR_RESOLUTION_1024x768,  1024,  768 }, //12
         { GR_RESOLUTION_1280x1024, 1280, 1024 },
         { GR_RESOLUTION_1600x1200, 1600, 1200 },
         { GR_RESOLUTION_400x300,    400,  300 },
@@ -245,7 +245,7 @@ static GrScreenResolution_t fxBestResolution (int width, int height)
         { GR_RESOLUTION_2048x1536, 2048, 1536 },
         { GR_RESOLUTION_2048x2048, 2048, 2048 },
         /* nd Extended */
-        {GR_RESOLUTION_1280x720, 1280, 720},
+        {GR_RESOLUTION_1280x720, 1280, 720}, //24
         {GR_RESOLUTION_1280x800, 1280, 800},
         {GR_RESOLUTION_1360x768, 1360, 768},
         {GR_RESOLUTION_1440x900, 1440, 900},
@@ -253,10 +253,13 @@ static GrScreenResolution_t fxBestResolution (int width, int height)
         {GR_RESOLUTION_1680x720, 1680, 720},
         {GR_RESOLUTION_1680x1050, 1680, 1050},
         {GR_RESOLUTION_1792x768, 1792, 768},
-        {GR_RESOLUTION_1920x800, 1920, 800},
+        {GR_RESOLUTION_1920x800, 1920, 800}, //32
         {GR_RESOLUTION_1920x1080, 1920, 1080},
         {GR_RESOLUTION_1920x1200, 1920, 1200},
         {GR_RESOLUTION_1960x840, 1960, 840},
+        {GR_RESOLUTION_2096x900, 2096, 900},
+        {GR_RESOLUTION_2304x960, 2304, 960},
+        {GR_RESOLUTION_2560x1080, 2560, 1080}, //38
         /* This one added so we have an unreachable max, if more come */
         {GR_RESOLUTION_3840x2160, 3840, 2160}};
  
