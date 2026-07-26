@@ -799,7 +799,7 @@ fxMesa->keepResidentOnInvalidate = GL_TRUE;
                       fxMesa->snapVertices ? "" : "no ");
    }
 
-  sprintf(fxMesa->rendererString, "Mesa %s v0.74 %s%s",
+  sprintf(fxMesa->rendererString, "Mesa %s v0.75 %s%s",
           grGetString(GR_RENDERER),
           grGetString(GR_HARDWARE),
           ((fxMesa->type < GR_SSTTYPE_Voodoo4) && (voodoo->numChips > 1)) ? " SLI" : "");
