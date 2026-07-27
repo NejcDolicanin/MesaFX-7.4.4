@@ -589,6 +589,8 @@ fxTMMoveInTM_NoLock(fxMesaContext fxMesa, struct gl_texture_object *tObj,
    fxMesa->stats.texUpload++;
 
    ti->isInTM = GL_TRUE;
+   /* Nejc: all levels were just downloaded, card copy is current again */
+   ti->dirtyImages = GL_FALSE;
 }
 
 
@@ -610,11 +612,17 @@ fxTMReloadMipMapLevel(fxMesaContext fxMesa, struct gl_texture_object *tObj,
    GrLOD_t lodlevel;
    GLint tmu;
    struct gl_texture_image *texImage = tObj->Image[0][level];
-   tfxMipMapLevel *mml = FX_MIPMAP_DATA(texImage);
+   tfxMipMapLevel *mml;
 
    if (TDFX_DEBUG & VERBOSE_TEXTURE) {
       fprintf(stderr, "fxTMReloadMipMapLevel(%p (%d), %d)\n", (void *)tObj, tObj->Name, level);
    }
+
+   /* Nejc: the asserts below compile out in release - a missing level or
+    * missing image data would download from a wild pointer */
+   if (!texImage || !texImage->Data || !FX_MIPMAP_DATA(texImage))
+      return;
+   mml = FX_MIPMAP_DATA(texImage);
 
    assert(mml);
    assert(mml->width > 0);

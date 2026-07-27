@@ -305,6 +305,10 @@ typedef struct tfxTexInfo_t
    GLboolean fixedPalette;
    GLboolean validated;
 
+   /* Nejc: images changed while the texture stayed resident in TMU.
+    * Separate from 'validated', which fxTexValidate() clears too early. */
+   GLboolean dirtyImages;
+
    GLboolean padded;
 
    /* NEJC SOF: New fields for TMU affinity and pinning */

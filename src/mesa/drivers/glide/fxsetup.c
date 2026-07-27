@@ -330,6 +330,30 @@ fxGetTexSetConfiguration(GLcontext * ctx,
 
 /************************* Single Texture Set ***************************/
 
+/* Nejc: push new CPU-side images to a texture we kept resident on invalidate
+ * (keepResidentOnInvalidate). Without this the card keeps the old texels. */
+static void
+fxRefreshDirtyImages_NoLock(fxMesaContext fxMesa, struct gl_texture_object *tObj)
+{
+   tfxTexInfo *ti = fxTMGetTexInfo(tObj);
+   int l, i;
+
+   if (!ti->isInTM || !ti->dirtyImages)
+      return;
+
+   /* the data really did change, so don't let the per-frame duplicate
+    * suppression in fxTMReloadMipMapLevel drop these */
+   ti->last_uploaded_level[0] = -1;
+   ti->last_uploaded_level[1] = -1;
+
+   for (i = FX_largeLodValue(ti->info), l = ti->minLevel;
+        i <= FX_smallLodValue(ti->info); i++, l++) {
+      fxTMReloadMipMapLevel(fxMesa, tObj, l);
+   }
+
+   ti->dirtyImages = GL_FALSE;
+}
+
 static void
 fxSetupSingleTMU_NoLock(fxMesaContext fxMesa, struct gl_texture_object *tObj)
 {
@@ -418,6 +442,8 @@ fxSetupSingleTMU_NoLock(fxMesaContext fxMesa, struct gl_texture_object *tObj)
 			    GR_MIPMAPLEVELMASK_ODD, &(ti->info));
       grTexSource(GR_TMU1, ti->tm[FX_TMU1]->startAddr,
 			    GR_MIPMAPLEVELMASK_EVEN, &(ti->info));
+
+      fxRefreshDirtyImages_NoLock(fxMesa, tObj);
    }
    else {
       if (ti->whichTMU == FX_TMU_BOTH)
@@ -448,25 +474,7 @@ fxSetupSingleTMU_NoLock(fxMesaContext fxMesa, struct gl_texture_object *tObj)
 
       grTexSource(tmu, ti->tm[tmu]->startAddr, GR_MIPMAPLEVELMASK_BOTH, &(ti->info));
 
-      /* If texture was invalidated but kept resident, push new CPU-side data now.
-      Compensating mechanism for keepResidentOnInvalidate
-
-      1. Checks if the texture is still loaded in TMU memory (ti->isInTM).
-      2. Checks if Mesa marked it invalidated (!ti->validated).
-      3. If both are true → it reuploads all mipmap levels back into the TMU in place.
-      Essentially performing a "refresh" rather than a full fxTMMoveOutTM + MoveInTM cycle.
-      4. Marks it as valid again (ti->validated = GL_TRUE).
-      */
-      if (ti->isInTM && !ti->validated)
-      {
-         int l, i;
-         for (i = FX_largeLodValue(ti->info), l = ti->minLevel;
-              i <= FX_smallLodValue(ti->info); i++, l++)
-         {
-            fxTMReloadMipMapLevel(fxMesa, tObj, l);
-         }
-         ti->validated = GL_TRUE;
-      }
+      fxRefreshDirtyImages_NoLock(fxMesa, tObj);
    }
 }
 
@@ -935,6 +943,9 @@ fxSetupDoubleTMU_NoLock(fxMesaContext fxMesa,
    grTexClampMode(tmu1, ti1->sClamp, ti1->tClamp);
    grTexFilterMode(tmu1, ti1->minFilt, ti1->maxFilt);
    grTexMipMapMode(tmu1, ti1->mmMode, FXFALSE);
+
+   fxRefreshDirtyImages_NoLock(fxMesa, tObj0);
+   fxRefreshDirtyImages_NoLock(fxMesa, tObj1);
 
 #undef T0_NOT_IN_TMU
 #undef T1_NOT_IN_TMU
