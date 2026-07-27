@@ -668,6 +668,18 @@ _mesa_test_texobj_completeness( const GLcontext *ctx,
 
 
 /**
+ * Nejc: Soldier of Fortune bind hardcoded texture
+ * names - lightmaps from 1024, images from 1153 - without ever calling
+ * glGenTextures.  If glGenTextures hands out a name in that range before
+ * the game binds it, the generated texture and the game's lightmap end up
+ * sharing one texture object, and each overwrites the other.
+ *
+ * Keep generated names above the range games hardcode.
+ */
+#define GEN_TEXNAME_BASE 8192
+
+
+/**
  * Generate texture names.
  *
  * \param n number of texture names to be generated.
@@ -678,7 +690,7 @@ _mesa_test_texobj_completeness( const GLcontext *ctx,
  * Calls _mesa_HashFindFreeKeyBlock() to find a block of free texture
  * IDs which are stored in \p textures.  Corresponding empty texture
  * objects are also generated.
- */ 
+ */
 void GLAPIENTRY
 _mesa_GenTextures( GLsizei n, GLuint *textures )
 {
@@ -702,21 +714,18 @@ _mesa_GenTextures( GLsizei n, GLuint *textures )
 
    first = _mesa_HashFindFreeKeyBlock(ctx->Shared->TexObjects, n);
 
+   /* Nejc: lift the block above the range games hardcode (see above).
+    * _mesa_HashFindFreeKeyBlock returns MaxKey+1, so first < base means
+    * nothing at or above base has ever been inserted - the block is free. */
+   if (first > 0 && first < GEN_TEXNAME_BASE)
+      first = GEN_TEXNAME_BASE;
+
    /* Allocate new, empty texture objects */
    for (i = 0; i < n; i++) {
       struct gl_texture_object *texObj;
       GLuint name = first + i;
       GLenum target = 0;
       texObj = (*ctx->Driver.NewTextureObject)(ctx, name, target);
-      
-      /* find a free ID */
-      name = _mesa_HashFindFreeKeyBlock(ctx->Shared->TexObjects, 1);
-
-      /* NEJC SOF FIX: delay reuse by bumping IDs into a higher range */
-      if (name > 0) {
-         name += 256;  /* safe margin before reuse */
-      }
-
       if (!texObj) {
          _glthread_UNLOCK_MUTEX(ctx->Shared->Mutex);
          _mesa_error(ctx, GL_OUT_OF_MEMORY, "glGenTextures");
@@ -771,8 +780,11 @@ unbind_texobj_from_texunits(GLcontext *ctx, struct gl_texture_object *texObj)
       struct gl_texture_unit *unit = &ctx->Texture.Unit[u];
       for (tex = 0; tex < NUM_TEXTURE_TARGETS; tex++) {
          if (texObj == unit->CurrentTex[tex]) {
+            /* Nejc: revert to the default object for *this* target - using
+             * the 1D default left a 1D object in e.g. the 2D slot, which is
+             * incomplete, so the unit rendered untextured (white). */
             _mesa_reference_texobj(&unit->CurrentTex[tex],
-                                   ctx->Shared->DefaultTex[TEXTURE_1D_INDEX]);
+                                   ctx->Shared->DefaultTex[tex]);
             ASSERT(unit->CurrentTex[tex]);
             break;
          }
