@@ -249,7 +249,7 @@ static GrScreenResolution_t fxBestResolution (int width, int height)
         {GR_RESOLUTION_960x600, 960, 600},
         {GR_RESOLUTION_1064x600, 1064, 600},
         {GR_RESOLUTION_1144x480, 1144, 480},
-        {GR_RESOLUTION_1432x600, 1432, 600},
+        {GR_RESOLUTION_1400x600, 1400, 600},
         {GR_RESOLUTION_1280x720, 1280, 720},
         {GR_RESOLUTION_1280x800, 1280, 800},
         {GR_RESOLUTION_1360x768, 1360, 768},
