@@ -245,11 +245,6 @@ static GrScreenResolution_t fxBestResolution (int width, int height)
         { GR_RESOLUTION_2048x1536, 2048, 1536 },
         { GR_RESOLUTION_2048x2048, 2048, 2048 },
         /* nd Extended */
-        {GR_RESOLUTION_768x480, 768, 480}, //24
-        {GR_RESOLUTION_960x600, 960, 600},
-        {GR_RESOLUTION_1064x600, 1064, 600},
-        {GR_RESOLUTION_1144x480, 1144, 480},
-        {GR_RESOLUTION_1400x600, 1400, 600},
         {GR_RESOLUTION_1280x720, 1280, 720},
         {GR_RESOLUTION_1280x800, 1280, 800},
         {GR_RESOLUTION_1360x768, 1360, 768},
@@ -264,9 +259,15 @@ static GrScreenResolution_t fxBestResolution (int width, int height)
         {GR_RESOLUTION_1960x840, 1960, 840},
         {GR_RESOLUTION_2096x900, 2096, 900},
         {GR_RESOLUTION_2304x960, 2304, 960},
-        {GR_RESOLUTION_2560x1080, 2560, 1080}, //43
-        /* This one added so we have an unreachable max, if more come */
-        {GR_RESOLUTION_3840x2160, 3840, 2160}};
+        {GR_RESOLUTION_2560x1080, 2560, 1080}, //38
+        /* Appended 2026-08: 480/600-line widescreen modes */
+        {GR_RESOLUTION_768x480, 768, 480},     //39
+        {GR_RESOLUTION_960x600, 960, 600},     //40
+        {GR_RESOLUTION_1064x600, 1064, 600},   //41
+        {GR_RESOLUTION_1144x480, 1144, 480},   //42
+        {GR_RESOLUTION_1400x600, 1400, 600},   //43
+        /* Unreachable max, and it must stay LAST */
+        {GR_RESOLUTION_3840x2160, 3840, 2160}};//44
  
 
  int i, size;
