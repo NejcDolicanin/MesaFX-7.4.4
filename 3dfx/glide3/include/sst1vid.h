@@ -133,11 +133,6 @@ typedef FxI32 GrScreenResolution_t;
 #define GR_RESOLUTION_2048x1536 0x16
 #define GR_RESOLUTION_2048x2048 0x17
 /* nd Extended */
-#define GR_RESOLUTION_768x480   0x28	/* 16:10 */
-#define GR_RESOLUTION_960x600   0x29	/* 16:10 */
-#define GR_RESOLUTION_1064x600  0x2A	/* 16:9 */
-#define GR_RESOLUTION_1144x480  0x2B	/* 21:9 */
-#define GR_RESOLUTION_1400x600  0x2C	/* 21:9 */
 #define GR_RESOLUTION_1280x720  0x18	/* 16:9 */
 #define GR_RESOLUTION_1280x800  0x19	/* 16:10 */
 #define GR_RESOLUTION_1360x768  0x1A	/* 16:9 */
@@ -153,7 +148,13 @@ typedef FxI32 GrScreenResolution_t;
 #define GR_RESOLUTION_2096x900  0x24	/* 21:9 */
 #define GR_RESOLUTION_2304x960  0x25	/* 21:9 */
 #define GR_RESOLUTION_2560x1080 0x26	/* 21:9 */
-#define GR_RESOLUTION_3840x2160 0x27	/* 4k to use as max */
+#define GR_RESOLUTION_768x480   0x27	/* 16:10 */
+#define GR_RESOLUTION_960x600   0x28	/* 16:10 */
+#define GR_RESOLUTION_1064x600  0x29	/* 16:9 */
+#define GR_RESOLUTION_1144x480  0x2A	/* 21:9 */
+#define GR_RESOLUTION_1400x600  0x2B	/* 21:9 */
+
+#define GR_RESOLUTION_3840x2160 0x2C	/* 4k to use as max */
 #define GR_RESOLUTION_NONE      0xff
 
 #ifdef GR_RESOLUTION_MAX
