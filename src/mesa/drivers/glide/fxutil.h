@@ -33,6 +33,12 @@ extern "C"
      */
     int DetectQuake3Engine(void);
 
+    /*
+     * FX_GL_FORCE_16BPP_PIX / FX_GL_FORCE_16BPP_TEXTURES, the 3dfx ICD's settings: 1 forces 16 bit.
+     * Unset, 0 (desktop depth) and 2 (force 32 bit) leave MesaFX at its default, which is 32 bit.
+     */
+    int fxForce16bpp(const char *name);
+
 #ifdef __cplusplus
 }
 #endif

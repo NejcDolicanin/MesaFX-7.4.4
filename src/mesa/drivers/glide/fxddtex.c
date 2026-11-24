@@ -371,7 +371,7 @@ fxDDTexParam(GLcontext * ctx, GLenum target, struct gl_texture_object *tObj,
           * because the way its combiners are set. So we fall back
           * to GL_NEAREST_MIPMAP_NEAREST. We'll let true trilinear
           * enabled for V2, V3.
-          * Nejc: FX_MESA_TRILINEAR_ENABLED=1 clears HaveCmbExt at context
+          * Nejc: FX_GL_TRILINEAR_ENABLED=2 clears HaveCmbExt at context
           * creation, which puts Napalm on the classic path below - true
           * single-pass split-TMU trilinear, same as V2/V3.
           */

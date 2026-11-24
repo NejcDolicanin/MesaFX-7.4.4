@@ -265,4 +265,12 @@ int DetectQuake3Engine(void)
     return cached_result;
 }
 
+/* FX_GL_FORCE_16BPP_PIX / _TEXTURES as the 3dfx ICD reads them: 1 forces 16 bit; unset, 0 and 2 (force 32 bit) are
+ * MesaFX's default */
+int fxForce16bpp(const char *name)
+{
+    const char *s = fxGetRegistryOrEnvironmentString(name);
+    return s != NULL && s[0] == '1';
+}
+
 #endif /* _WIN32 */

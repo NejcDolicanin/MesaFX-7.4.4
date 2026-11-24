@@ -148,6 +148,7 @@ typedef FxI32 GrScreenResolution_t;
 #define GR_RESOLUTION_2096x900  0x24	/* 21:9 */
 #define GR_RESOLUTION_2304x960  0x25	/* 21:9 */
 #define GR_RESOLUTION_2560x1080 0x26	/* 21:9 */
+
 #define GR_RESOLUTION_768x480   0x27	/* 16:10 */
 #define GR_RESOLUTION_960x600   0x28	/* 16:10 */
 #define GR_RESOLUTION_1064x600  0x29	/* 16:9 */

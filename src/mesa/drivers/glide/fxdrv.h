@@ -474,7 +474,7 @@ struct tfxMesaContext
    tfxUnitsState restoreUnitsState;	/* saved during multipass */
    GLboolean multipass;			/* true when drawing intermediate pass */
 
-   /* Nejc: FX_MESA_TRILINEAR_ENABLED=1 - the whole context runs the
+   /* Nejc: FX_GL_TRILINEAR_ENABLED=2 - the whole context runs the
     * classic combine path (HaveCmbExt forced off) with a single texture
     * unit exposed, so GL_*_MIPMAP_LINEAR textures get true single-pass
     * split-TMU trilinear (see fxMesaCreateContext / fxDDInitExtensions) */

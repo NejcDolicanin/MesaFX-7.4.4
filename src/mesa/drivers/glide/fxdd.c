@@ -1868,7 +1868,7 @@ fxDDInitExtensions(GLcontext * ctx)
    _mesa_enable_extension(ctx, "GL_EXT_stencil_wrap");
    _mesa_enable_extension(ctx, "GL_EXT_stencil_two_side");
 
-   /* Nejc: in trilinear mode (FX_MESA_TRILINEAR_ENABLED=1) multitexture is
+   /* Nejc: in trilinear mode (FX_GL_TRILINEAR_ENABLED=2) multitexture is
     * hidden - both TMUs are reserved for the split single-pass trilinear
     * placement, and engines fall back to their own multipass lightmapping */
    if (fxMesa->haveTwoTMUs && !fxMesa->trilinearEnabled) {

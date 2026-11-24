@@ -471,7 +471,7 @@ fxMesaCreateContext(GLuint win,
 /* Defaults enabled: keep textures resident on invalidate */
 fxMesa->keepResidentOnInvalidate = GL_TRUE;
 
-/* Nejc: FX_MESA_TRILINEAR_ENABLED=1 - true single-pass trilinear via the
+/* Nejc: FX_GL_TRILINEAR_ENABLED=2 - true single-pass trilinear via the
  * classic split-TMU path (odd mip levels on TMU0, even on TMU1, blended by
  * the hardware LOD fraction). VSA-100 can't fetch a trilinear sample AND a
  * second texture in the same pass, and mixing the extended (CmbExt) combine
@@ -481,25 +481,27 @@ fxMesa->keepResidentOnInvalidate = GL_TRUE;
  * fall back to their own multipass lightmapping, every draw is
  * single-texture, and GL_*_MIPMAP_LINEAR requests render genuinely
  * trilinear.
- * Default (unset or =0): stock driver - multitexture and extended combines
- * as always, trilinear requests render bilinear on Napalm.
+ * The setting is the 3dfx ICD's (0 bilinear, 1 LOD dithering, 2 trilinear), so
+ * one toggle serves both drivers. Unset, 0 and 1 (MesaFX has no LOD dithering
+ * of its own): stock driver - multitexture and extended combines as always,
+ * trilinear requests render bilinear on Napalm.
  * Overridden by glide's own FX_GLIDE_LOD_DITHER (dithered mip transitions,
  * full speed, multitexture kept): running both would drop multitexture and
  * ~20 fps for nothing, so when that is set the driver stays stock and lets
  * glide do the dithering. */
  fxMesa->trilinearEnabled = GL_FALSE;
  {
-    char *tri = fxGetRegistryOrEnvironmentString("FX_MESA_TRILINEAR_ENABLED");
+    char *tri = fxGetRegistryOrEnvironmentString("FX_GL_TRILINEAR_ENABLED");
     char *lodDither = fxGetRegistryOrEnvironmentString("FX_GLIDE_LOD_DITHER");
 
     if (lodDither && (atoi(lodDither) != 0)) {
        /* glide dithers the mips; keep the driver fully stock */
        if (fxMesa->verbose) {
           fprintf(stderr, "Voodoo ! FX_GLIDE_LOD_DITHER is set%s\n",
-                  (tri && (tri[0] == '1'))
-                     ? " - ignoring FX_MESA_TRILINEAR_ENABLED" : "");
+                  (tri && (tri[0] == '2'))
+                     ? " - ignoring FX_GL_TRILINEAR_ENABLED" : "");
        }
-    } else if (tri && (tri[0] == '1')) {
+    } else if (tri && (tri[0] == '2')) {
        fxMesa->trilinearEnabled = GL_TRUE;
        fxMesa->HaveCmbExt = GL_FALSE;	/* classic combine path only */
        if (fxMesa->verbose) {
@@ -510,13 +512,13 @@ fxMesa->keepResidentOnInvalidate = GL_TRUE;
  }
 
 /* Nejc 16bit Textures override from 3dfx tools */
-   if (fxGetRegistryOrEnvironmentString("FX_MESA_FORCE_16BPP_TEXTURES") != NULL)
+   if (fxForce16bpp("FX_GL_FORCE_16BPP_TEXTURES"))
    {
          fxMesa->HaveTexFmt = GL_FALSE;
    }
 
    /* Nejc 16bit pixel format override - force at context creation, safety */
-   if (fxGetRegistryOrEnvironmentString("FX_MESA_FORCE_16BPP_PIX") != NULL)
+   if (fxForce16bpp("FX_GL_FORCE_16BPP_PIX"))
    {
       int boardType = fxMesaSelectCurrentBoard(0);
       if (boardType == GR_SSTTYPE_Voodoo5 || boardType == GR_SSTTYPE_Voodoo4)
@@ -805,7 +807,7 @@ fxMesa->keepResidentOnInvalidate = GL_TRUE;
                       fxMesa->snapVertices ? "" : "no ");
    }
 
-  sprintf(fxMesa->rendererString, "Mesa %s v0.76 %s%s",
+  sprintf(fxMesa->rendererString, "Mesa %s v0.77 %s%s",
           grGetString(GR_RENDERER),
           grGetString(GR_HARDWARE),
           ((fxMesa->type < GR_SSTTYPE_Voodoo4) && (voodoo->numChips > 1)) ? " SLI" : "");

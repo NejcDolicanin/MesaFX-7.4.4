@@ -486,7 +486,7 @@ wglCreateContext (HDC hdc)
    /* fxDebugLog("  -> Current pixel format: %d\n", curPFD); */
 
    /* Nejc: When forcing 16-bit, ensure curPFD is within valid range */
-   if (fxGetRegistryOrEnvironmentString("FX_MESA_FORCE_16BPP_PIX") != NULL)
+   if (fxForce16bpp("FX_GL_FORCE_16BPP_PIX"))
    {
       int boardType = fxMesaSelectCurrentBoard(0);
       if (boardType == GR_SSTTYPE_Voodoo5 || boardType == GR_SSTTYPE_Voodoo4)
@@ -1222,7 +1222,7 @@ static int
 pfd_tablen (void)
 {
    /* Nejc 16-bit override, limit to 2 pixelFormats 565 single buffer and 565 double buffer */
-   if (fxGetRegistryOrEnvironmentString("FX_MESA_FORCE_16BPP_PIX") != NULL)
+   if (fxForce16bpp("FX_GL_FORCE_16BPP_PIX"))
    {
       int boardType = fxMesaSelectCurrentBoard(0);
       if (boardType == GR_SSTTYPE_Voodoo5 || boardType == GR_SSTTYPE_Voodoo4)
@@ -1259,7 +1259,7 @@ wglChoosePixelFormat (HDC hdc, const PIXELFORMATDESCRIPTOR *ppfd)
    }
 
    /* Nejc 16bit override */
-   if (fxGetRegistryOrEnvironmentString("FX_MESA_FORCE_16BPP_PIX") != NULL)
+   if (fxForce16bpp("FX_GL_FORCE_16BPP_PIX"))
    {
       pfd.cDepthBits = 16;
       pfd.cColorBits = 16;
@@ -1366,7 +1366,7 @@ wglDescribePixelFormat (HDC hdc, int iPixelFormat, UINT nBytes,
    qt_valid_pix = pfd_tablen();
 
    /* Nejc: When forcing 16-bit, map out-of-range formats to 16-bit equivalents */
-   if (fxGetRegistryOrEnvironmentString("FX_MESA_FORCE_16BPP_PIX") != NULL)
+   if (fxForce16bpp("FX_GL_FORCE_16BPP_PIX"))
    {
       int boardType = fxMesaSelectCurrentBoard(0);
       if (boardType == GR_SSTTYPE_Voodoo5 || boardType == GR_SSTTYPE_Voodoo4)
@@ -1425,7 +1425,7 @@ wglSetPixelFormat (HDC hdc, int iPixelFormat, const PIXELFORMATDESCRIPTOR *ppfd)
    qt_valid_pix = pfd_tablen();
 
    /* Nejc: When forcing 16-bit, accept any pixel format and map it to 16-bit */
-   if (fxGetRegistryOrEnvironmentString("FX_MESA_FORCE_16BPP_PIX") != NULL)
+   if (fxForce16bpp("FX_GL_FORCE_16BPP_PIX"))
    {
       int boardType = fxMesaSelectCurrentBoard(0);
       if (boardType == GR_SSTTYPE_Voodoo5 || boardType == GR_SSTTYPE_Voodoo4)
@@ -1811,7 +1811,7 @@ DrvDescribePixelFormat (HDC hdc, int iPixelFormat, UINT nBytes,
    qt_valid_pix = pfd_tablen();
 
    /* Nejc: When forcing 16-bit via ICD, report all 6 formats with proper descriptors */
-   if (fxGetRegistryOrEnvironmentString("FX_MESA_FORCE_16BPP_PIX") != NULL)
+   if (fxForce16bpp("FX_GL_FORCE_16BPP_PIX"))
    {
       int boardType = fxMesaSelectCurrentBoard(0);
       if (boardType == GR_SSTTYPE_Voodoo5 || boardType == GR_SSTTYPE_Voodoo4)
@@ -1855,7 +1855,7 @@ DrvSetPixelFormat (HDC hdc, int iPixelFormat)
    qt_valid_pix = pfd_tablen();
 
    /* Nejc: When forcing 16-bit via ICD, accept any pixel format and map to 16-bit */
-   if (fxGetRegistryOrEnvironmentString("FX_MESA_FORCE_16BPP_PIX") != NULL)
+   if (fxForce16bpp("FX_GL_FORCE_16BPP_PIX"))
    {
       int boardType = fxMesaSelectCurrentBoard(0);
 
